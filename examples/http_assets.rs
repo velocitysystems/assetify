@@ -6,8 +6,8 @@
 use std::io::Read as _;
 
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, Digest, FileAccess, FileSource,
-   FileSpec, Locator, Provider as _, StaticResolver,
+   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, FileAccess, FileSource, FileSpec,
+   Provider as _, StaticResolver,
 };
 use rand::distr::{Alphanumeric, SampleString};
 use sha2::Digest as _;
@@ -60,13 +60,14 @@ async fn publish(
          )
          .mount(server)
          .await;
-      sources.push(FileSource::new(
-         name.clone(),
-         Locator::HTTP {
-            url: format!("{}/{id}/{revision}/{name}", server.uri()),
-         },
-         Digest::sha256_hex(&hex::encode(sha2::Sha256::digest(content.as_bytes()))).unwrap(),
-      ));
+      sources.push(
+         FileSource::http(
+            name.clone(),
+            format!("{}/{id}/{revision}/{name}", server.uri()),
+            &hex::encode(sha2::Sha256::digest(content.as_bytes())),
+         )
+         .unwrap(),
+      );
    }
    AssetSource::new(revision, sources)
 }

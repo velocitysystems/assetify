@@ -43,28 +43,21 @@
 //!
 //! ```no_run
 //! use assetify::{
-//!    AccessKind, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec, Locator,
-//!    StaticResolver,
+//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, FileSpec, StaticResolver,
 //! };
 //!
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
+//! let source = AssetSource::new(
+//!    "20260821",
+//!    vec![FileSource::http(
+//!       "model.bin",
+//!       "https://assets.example.com/tokenizer/20260821/model.bin",
+//!       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+//!    )?],
+//! );
+//!
 //! let engine = Assetify::builder("/var/cache/my-app/assets")
-//!    .resolver(StaticResolver::new([(
-//!       "nlp/tokenizer/en",
-//!       1,
-//!       AssetSource::new(
-//!          "20260821",
-//!          vec![FileSource::new(
-//!             "model.bin",
-//!             Locator::HTTP {
-//!                url: "https://assets.example.com/tokenizer/20260821/model.bin".to_string(),
-//!             },
-//!             Digest::sha256_hex(
-//!                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-//!             )?,
-//!          )],
-//!       ),
-//!    )]))
+//!    .resolver(StaticResolver::new([("nlp/tokenizer/en", 1, source)]))
 //!    .build()?;
 //!
 //! let outcome = engine

@@ -34,30 +34,39 @@ assetify = { version = "0.1", features = ["http"] }
 
 ## Quick start
 
-Point the builder at a cache directory, tell the built-in `StaticResolver`
-where each asset lives, and request what you need:
-
 ```rust
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec,
-   Locator, StaticResolver,
+   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, FileSource, FileSpec,
+   StaticResolver,
 };
+```
 
+**1. Say where the asset lives** — a revision and its files, each a URL plus
+its SHA-256:
+
+```rust
+let source = AssetSource::new(
+   "20260821", // revision: newest (lexicographically) wins
+   vec![FileSource::http(
+      "model.bin",
+      "https://assets.example.com/tokenizer/20260821/model.bin",
+      "…the file's sha-256, 64 hex chars…",
+   )?],
+);
+```
+
+**2. Build an engine** over a cache directory, registering the source under
+the asset's id and format lane:
+
+```rust
 let engine = Assetify::builder("/var/cache/my-app/assets")
-   .resolver(StaticResolver::new([(
-      "nlp/tokenizer/en", // asset id: your namespace, /-separated
-      1,                  // format lane: the payload version your build reads
-      AssetSource::new(
-         "20260821",      // revision: newest (lexicographically) wins
-         vec![FileSource::new(
-            "model.bin",
-            Locator::HTTP { url: "https://assets.example.com/tokenizer/20260821/model.bin".into() },
-            Digest::sha256_hex("…the file's sha-256, 64 hex chars…")?,
-         )],
-      ),
-   )]))
+   .resolver(StaticResolver::new([("nlp/tokenizer/en", 1, source)]))
    .build()?;
+```
 
+**3. Ask for the asset**, naming the files you need and how you'll read them:
+
+```rust
 let outcome = engine
    .asset(AssetRequest::new(
       "nlp/tokenizer/en",
@@ -121,19 +130,16 @@ match asset.take_file("model.bin").unwrap().access {
 
 ### Custom sources
 
-`StaticResolver` covers sources fixed at build time. When sources change at
-runtime — your backend publishes new revisions, entitlements differ per user —
-implement `SourceResolver` yourself. A resolver answers one question: **where
-can this asset be acquired right now?** Given an id and lane, it returns the
-current revision and each file's URL and digest; assetify handles everything
-after that (download, verify, cache, serve).
+One rule: **sources known up front → `StaticResolver`; sources computed at
+runtime → implement `SourceResolver`** (one async method). Either way, a
+resolver answers a single question — *where can this asset be acquired right
+now?* — and assetify handles everything after that (download, verify, cache,
+serve).
 
 ```rust
-use assetify::{AssetSource, Digest, FileSource, Locator, ResolveError, SourceResolver};
+use assetify::{AssetSource, FileSource, ResolveError, SourceResolver};
 
-/// Resolves against a manifest your app fetched from its own backend:
-/// each entry lists an asset's current revision and its files' URLs
-/// and SHA-256 digests.
+/// Resolves against a manifest your app fetched from its own backend.
 struct ManifestResolver {
    manifest: Manifest,
 }
@@ -153,11 +159,10 @@ impl SourceResolver for ManifestResolver {
 
       let mut files = Vec::new();
       for file in &entry.files {
-         files.push(FileSource::new(
-            file.name.clone(),
-            Locator::HTTP { url: file.url.clone() },
-            Digest::sha256_hex(&file.sha256).map_err(|e| ResolveError::new(e.to_string()))?,
-         ));
+         files.push(
+            FileSource::http(&file.name, &file.url, &file.sha256)
+               .map_err(|e| ResolveError::new(e.to_string()))?,
+         );
       }
       Ok(Some(AssetSource::new(entry.revision.clone(), files)))
    }

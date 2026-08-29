@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::digest::Digest;
+use crate::digest::{Digest, InvalidDigest};
 
 /// Where one file's bytes can be acquired from.
 ///
@@ -63,6 +63,35 @@ impl FileSource {
          locator,
          digest,
       }
+   }
+
+   /// A file fetched over HTTP(S), verified against a SHA-256 given
+   /// as 64 hex characters — the one-line spelling of the common
+   /// case.
+   pub fn http(
+      name: impl Into<String>,
+      url: impl Into<String>,
+      sha256_hex: &str,
+   ) -> Result<Self, InvalidDigest> {
+      Ok(FileSource::new(
+         name,
+         Locator::HTTP { url: url.into() },
+         Digest::sha256_hex(sha256_hex)?,
+      ))
+   }
+
+   /// A file copied from the local filesystem, verified against a
+   /// SHA-256 given as 64 hex characters.
+   pub fn local(
+      name: impl Into<String>,
+      path: impl Into<PathBuf>,
+      sha256_hex: &str,
+   ) -> Result<Self, InvalidDigest> {
+      Ok(FileSource::new(
+         name,
+         Locator::File { path: path.into() },
+         Digest::sha256_hex(sha256_hex)?,
+      ))
    }
 }
 
@@ -128,4 +157,22 @@ pub trait SourceResolver: Send + Sync {
       id: &str,
       format_major: u32,
    ) -> Result<Option<AssetSource>, ResolveError>;
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+   #[test]
+   fn convenience_constructors_build_the_common_locators() {
+      let http = FileSource::http("model.bin", "https://example.com/m", EMPTY_SHA256).unwrap();
+      assert!(matches!(http.locator, Locator::HTTP { .. }));
+
+      let local = FileSource::local("model.bin", "/tmp/m", EMPTY_SHA256).unwrap();
+      assert!(matches!(local.locator, Locator::File { .. }));
+
+      assert!(FileSource::http("model.bin", "u", "not-hex").is_err());
+   }
 }
