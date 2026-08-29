@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
    AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileSource,
-   FileSpec, Locator, RejectedDelivery, ResolveError, SourceResolver, StaticResolver,
+   FileSpec, Locator, RejectedDelivery, ResolveError, Resolver, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -134,7 +134,7 @@ async fn cache_only_mode_serves_a_preseeded_root() {
 struct OfflineResolver;
 
 #[async_trait::async_trait]
-impl SourceResolver for OfflineResolver {
+impl Resolver for OfflineResolver {
    async fn resolve(&self, _: &str) -> Result<Option<AssetSource>, ResolveError> {
       Err(ResolveError::new("network unreachable"))
    }
@@ -227,7 +227,7 @@ struct CountingResolver {
 }
 
 #[async_trait::async_trait]
-impl SourceResolver for CountingResolver {
+impl Resolver for CountingResolver {
    async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
       self.calls.fetch_add(1, Ordering::SeqCst);
       self.inner.resolve(id).await

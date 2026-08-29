@@ -138,38 +138,66 @@ some_library::load_from(&*path)?;
 To handle any kind generically, match `take_file(name)`'s `FileAccess`
 (`Stream`, `Random`, or `AssetPath`) instead.
 
-### Custom sources
+### Static vs. dynamic resolvers
 
-One rule: **sources known up front → `StaticResolver`; sources computed at
-runtime → implement `SourceResolver`** (one async method). Either way, a
-resolver answers a single question — *where can this asset be acquired right
-now?* — and assetify handles everything after that (download, verify, cache,
-serve).
+A resolver answers one question for the engine: *where can this asset be
+acquired right now?* Everything after the answer — download, verify, cache,
+offline fallback — is identical. The only choice you make is **when the
+answer is decided**:
+
+| | Static | Dynamic |
+| --- | --- | --- |
+| The answer is decided… | when you write the code | on every request |
+| Assets can change… | with an app update or restart | while the app runs |
+| You write… | a `StaticResolver` map | a type implementing `Resolver` |
+| Typical case | URLs + checksums pinned per release | your backend publishes new revisions; per-user entitlements |
+
+The decision test: *can "where does this asset live?" change while your app
+is running?* No → `StaticResolver` (as in the quick start). Yes → implement
+`Resolver`, one async method. Swapping later touches one line — the
+`.resolver(…)` call.
+
+A dynamic resolver that asks your backend which release of an asset is
+current:
 
 ```rust
-use assetify::{AssetSource, FileSource, ResolveError, SourceResolver};
+use assetify::{AssetSource, FileSource, ResolveError, Resolver};
 
-/// Resolves against a manifest your app fetched from its own backend.
-struct ManifestResolver {
-   manifest: Manifest,
+/// Your type, named however you like — this one asks a backend API.
+struct DynamicResolver {
+   base_url: String, // e.g. "https://api.example.com"
 }
 
 #[async_trait::async_trait]
-impl SourceResolver for ManifestResolver {
+impl Resolver for DynamicResolver {
    async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
-      let Some(entry) = self.manifest.lookup(id) else {
-         return Ok(None);
+      // GET {base_url}/releases/nlp/tokenizer/en returns e.g.
+      //   { "version": "20260821",
+      //     "files": [ { "name": "model.bin", "sha256": "9f86d0…" } ] }
+      let Some(release) = fetch_release(&self.base_url, id).await? else {
+         return Ok(None); // the backend has no such asset
       };
-      let files = entry
+
+      let files = release
          .files
          .iter()
-         .map(|f| FileSource::http(&f.name, &f.url, &f.sha256))
+         .map(|f| {
+            FileSource::http(
+               &f.name,
+               format!("{}/releases/{id}/{}/{}", self.base_url, release.version, f.name),
+               &f.sha256,
+            )
+         })
          .collect::<Result<_, _>>()
          .map_err(|e| ResolveError::new(e.to_string()))?;
-      Ok(Some(AssetSource::new(entry.revision.clone(), files)))
+
+      Ok(Some(AssetSource::new(release.version, files)))
    }
 }
 ```
+
+The next time your backend's response says `"version": "20260901"`, every
+device picks the new release up on its next request — no app update.
 
 The three return values:
 

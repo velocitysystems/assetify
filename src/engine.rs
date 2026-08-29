@@ -33,7 +33,7 @@ use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
-use crate::source::{AssetSource, Locator, SourceResolver, local};
+use crate::source::{AssetSource, Locator, Resolver, local};
 use crate::store::{Store, layout};
 
 /// Key of one acquisition flight: one asset id.
@@ -48,7 +48,7 @@ type Slot = String;
 /// deployment are served in place).
 pub struct Assetify {
    store: Store,
-   resolver: Option<Box<dyn SourceResolver>>,
+   resolver: Option<Box<dyn Resolver>>,
    #[cfg(feature = "http")]
    http_client: reqwest::Client,
    /// One async mutex per slot: concurrent requests for the same
@@ -327,14 +327,14 @@ fn open_backing(path: &Path, kind: AccessKind) -> std::io::Result<FileAccess> {
 /// Builds an [`Assetify`].
 pub struct AssetifyBuilder {
    root: PathBuf,
-   resolver: Option<Box<dyn SourceResolver>>,
+   resolver: Option<Box<dyn Resolver>>,
 }
 
 impl AssetifyBuilder {
    /// Where acquired bytes come from. Omit for cache-only mode, which
    /// serves what the root already holds and permits a read-only
    /// root.
-   pub fn resolver(mut self, resolver: impl SourceResolver + 'static) -> Self {
+   pub fn resolver(mut self, resolver: impl Resolver + 'static) -> Self {
       self.resolver = Some(Box::new(resolver));
       self
    }

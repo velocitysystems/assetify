@@ -4,7 +4,7 @@
 //! Assetify owns download, verification, placement, and cache
 //! serving; the one thing it cannot know is which URL (or local file)
 //! currently holds each asset for *this* application's distribution
-//! channel. A [`SourceResolver`] answers exactly that question — no
+//! channel. A [`Resolver`] answers exactly that question — no
 //! manifest wire format, no versioning negotiation, just "asset `id`
 //! is available as revision `r`, from these per-file locations, with
 //! these digests."
@@ -149,7 +149,7 @@ impl ResolveError {
 /// cache their own lookups: a resolver is consulted on every request
 /// for an asset that is not already being acquired.
 #[async_trait::async_trait]
-pub trait SourceResolver: Send + Sync {
+pub trait Resolver: Send + Sync {
    /// Where asset `id` can currently be acquired.
    async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError>;
 }

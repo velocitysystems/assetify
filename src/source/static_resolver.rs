@@ -4,14 +4,14 @@
 
 use std::collections::HashMap;
 
-use crate::source::{AssetSource, ResolveError, SourceResolver};
+use crate::source::{AssetSource, ResolveError, Resolver};
 
-/// A [`SourceResolver`] over a fixed in-code map of asset id →
+/// A [`Resolver`] over a fixed in-code map of asset id →
 /// [`AssetSource`].
 ///
 /// The right tool when sources are known at build time or loaded from
 /// the application's own configuration. Anything dynamic — a remote
-/// catalog, per-user entitlements — implements [`SourceResolver`]
+/// catalog, per-user entitlements — implements [`Resolver`]
 /// directly instead.
 pub struct StaticResolver {
    sources: HashMap<String, AssetSource>,
@@ -34,7 +34,7 @@ impl StaticResolver {
 }
 
 #[async_trait::async_trait]
-impl SourceResolver for StaticResolver {
+impl Resolver for StaticResolver {
    async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
       Ok(self.sources.get(id).cloned())
    }
