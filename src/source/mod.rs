@@ -9,6 +9,8 @@
 //! in lane `format_major` is available as revision `r`, from these
 //! per-file locations, with these digests."
 
+#[cfg(feature = "http")]
+pub mod http;
 pub mod local;
 pub mod static_resolver;
 

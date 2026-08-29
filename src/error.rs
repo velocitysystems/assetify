@@ -25,4 +25,12 @@ pub enum AssetifyError {
       /// The underlying filesystem error.
       source: std::io::Error,
    },
+   /// The HTTP client could not be constructed — typically a TLS
+   /// backend initialization failure.
+   #[cfg(feature = "http")]
+   #[error("cannot construct the HTTP client: {source}")]
+   HTTPClient {
+      /// The underlying client error.
+      source: reqwest::Error,
+   },
 }

@@ -49,6 +49,8 @@ type Slot = (String, u32);
 pub struct Assetify {
    store: Store,
    resolver: Option<Box<dyn SourceResolver>>,
+   #[cfg(feature = "http")]
+   http_client: reqwest::Client,
    /// One async mutex per slot: concurrent requests for the same
    /// asset coalesce instead of racing the acquisition. Followers
    /// re-check the cache after the leader finishes and hit it.
@@ -196,12 +198,7 @@ impl Assetify {
             Locator::File { path } => local::fetch(path, &destination)
                .await
                .map_err(|e| format!("cannot acquire {:?} from {path:?}: {e}", file.name))?,
-            Locator::HTTP { url } => {
-               return Err(format!(
-                  "cannot acquire {:?} from {url:?}: assetify was built without the `http` feature",
-                  file.name
-               ));
-            }
+            Locator::HTTP { url } => self.fetch_http(url, &file.name, &destination).await?,
          };
          if !file.digest.matches_sha256(&computed) {
             return Err(format!("digest mismatch for {:?}", file.name));
@@ -213,6 +210,25 @@ impl Assetify {
          .place_revision(staged, id, format_major, &source.revision)
          .map(|_| ()) // AlreadyPresent: a racing writer won; same result.
          .map_err(|e| format!("cannot place revision {:?}: {e}", source.revision))
+   }
+
+   #[cfg(feature = "http")]
+   async fn fetch_http(
+      &self,
+      url: &str,
+      name: &str,
+      destination: &Path,
+   ) -> Result<[u8; 32], String> {
+      crate::source::http::fetch(&self.http_client, url, destination)
+         .await
+         .map_err(|e| format!("cannot acquire {name:?}: {e}"))
+   }
+
+   #[cfg(not(feature = "http"))]
+   async fn fetch_http(&self, url: &str, name: &str, _: &Path) -> Result<[u8; 32], String> {
+      Err(format!(
+         "cannot acquire {name:?} from {url:?}: assetify was built without the `http` feature"
+      ))
    }
 
    /// The newest serviceable on-disk revision, or the reason there is
@@ -317,6 +333,10 @@ impl AssetifyBuilder {
       Ok(Assetify {
          store: Store::new(self.root),
          resolver: self.resolver,
+         #[cfg(feature = "http")]
+         http_client: reqwest::Client::builder()
+            .build()
+            .map_err(|source| AssetifyError::HTTPClient { source })?,
          flights: Mutex::new(HashMap::new()),
          last_served: Mutex::new(HashMap::new()),
       })

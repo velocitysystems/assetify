@@ -363,6 +363,40 @@ async fn acquisition_is_all_or_nothing() {
    assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
 }
 
+#[cfg(not(feature = "http"))]
+#[tokio::test]
+async fn http_sources_explain_the_missing_feature() {
+   let cache = tempfile::tempdir().unwrap();
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "models/sentiment",
+         1,
+         AssetSource::new(
+            "r1",
+            vec![FileSource::new(
+               "model.bin",
+               Locator::HTTP {
+                  url: "https://example.invalid/model.bin".to_string(),
+               },
+               sha256_of(b"weights"),
+            )],
+         ),
+      )]))
+      .build()
+      .unwrap();
+
+   let reason = unwrap_unavailable(
+      engine
+         .asset(AssetRequest::new(
+            "models/sentiment",
+            1,
+            vec![FileSpec::new("model.bin", AccessKind::Random)],
+         ))
+         .await,
+   );
+   assert!(reason.contains("`http` feature"), "{reason}");
+}
+
 #[tokio::test]
 async fn invalid_ids_and_names_never_touch_the_filesystem() {
    let cache = tempfile::tempdir().unwrap();
