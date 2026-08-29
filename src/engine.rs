@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use crate::access::FileRandom;
 #[cfg(feature = "mmap")]
 use crate::access::MmapRandom;
-use crate::contract::access::{AccessKind, FileAccess, MaterializedPath};
+use crate::contract::access::{AccessKind, AssetPath, FileAccess};
 use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
@@ -346,7 +346,7 @@ fn open_backing(path: &Path, kind: AccessKind) -> std::io::Result<FileAccess> {
       AccessKind::Random => FileAccess::Random(Box::new(MmapRandom::open(path)?)),
       #[cfg(not(feature = "mmap"))]
       AccessKind::Random => FileAccess::Random(Box::new(FileRandom::open(path)?)),
-      AccessKind::MaterializedPath => FileAccess::Path(MaterializedPath::new(path)),
+      AccessKind::AssetPath => FileAccess::AssetPath(AssetPath::new(path)),
    })
 }
 

@@ -21,14 +21,14 @@ use std::path::{Path, PathBuf};
 /// Pick with a first-match rule:
 ///
 /// 1. Loading through a library that takes a filesystem path? →
-///    [`MaterializedPath`](AccessKind::MaterializedPath)
+///    [`AssetPath`](AccessKind::AssetPath)
 /// 2. Seeking, ranged reads, or probing the file in place? →
 ///    [`Random`](AccessKind::Random)
 /// 3. Otherwise → [`Stream`](AccessKind::Stream)
 ///
-/// Don't care? Declaring `MaterializedPath` for everything is legal
-/// and recovers a plain "give me paths" design; the finer kinds only
-/// pay off when you opt in.
+/// Don't care? Declaring `AssetPath` for everything is legal and
+/// recovers a plain "give me paths" design; the finer kinds only pay
+/// off when you opt in.
 ///
 /// How long you hold an access object is your business — a ranged
 /// pass at load time and a resident structure probed per query both
@@ -51,7 +51,7 @@ pub enum AccessKind {
    /// example, to hand its path to a wrapped library that insists on
    /// opening files itself. The delivered path stays valid while the
    /// delivery is held.
-   MaterializedPath,
+   AssetPath,
 }
 
 /// Forward-only access: one pass, at load time.
@@ -120,21 +120,21 @@ pub trait RandomAccess: Send + Sync {
 }
 
 /// A real path on the local filesystem, delivered for
-/// [`AccessKind::MaterializedPath`] files.
+/// [`AccessKind::AssetPath`] files.
 ///
 /// A newtype rather than a bare [`PathBuf`] so the validity promise
 /// has a place to live: the path stays valid while this value (or the
 /// delivery it came from) is held. Dereferences to [`Path`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MaterializedPath {
+pub struct AssetPath {
    path: PathBuf,
 }
 
-impl MaterializedPath {
+impl AssetPath {
    /// Wrap a path for delivery. Provider-side API; consumers receive
-   /// these inside [`FileAccess::Path`].
+   /// these inside [`FileAccess::AssetPath`].
    pub fn new(path: impl Into<PathBuf>) -> Self {
-      MaterializedPath { path: path.into() }
+      AssetPath { path: path.into() }
    }
 
    /// The path, borrowed.
@@ -149,7 +149,7 @@ impl MaterializedPath {
    }
 }
 
-impl Deref for MaterializedPath {
+impl Deref for AssetPath {
    type Target = Path;
 
    fn deref(&self) -> &Path {
@@ -157,7 +157,7 @@ impl Deref for MaterializedPath {
    }
 }
 
-impl AsRef<Path> for MaterializedPath {
+impl AsRef<Path> for AssetPath {
    fn as_ref(&self) -> &Path {
       &self.path
    }
@@ -169,8 +169,8 @@ pub enum FileAccess {
    Stream(StreamAccess),
    /// Satisfies [`AccessKind::Random`].
    Random(Box<dyn RandomAccess>),
-   /// Satisfies [`AccessKind::MaterializedPath`].
-   Path(MaterializedPath),
+   /// Satisfies [`AccessKind::AssetPath`].
+   AssetPath(AssetPath),
 }
 
 impl FileAccess {
@@ -182,7 +182,7 @@ impl FileAccess {
          (self, kind),
          (FileAccess::Stream(_), AccessKind::Stream)
             | (FileAccess::Random(_), AccessKind::Random)
-            | (FileAccess::Path(_), AccessKind::MaterializedPath)
+            | (FileAccess::AssetPath(_), AccessKind::AssetPath)
       )
    }
 }
@@ -192,7 +192,7 @@ impl std::fmt::Debug for FileAccess {
       match self {
          FileAccess::Stream(_) => f.write_str("FileAccess::Stream(..)"),
          FileAccess::Random(r) => write!(f, "FileAccess::Random(len = {})", r.len()),
-         FileAccess::Path(p) => write!(f, "FileAccess::Path({:?})", p.as_path()),
+         FileAccess::AssetPath(p) => write!(f, "FileAccess::AssetPath({:?})", p.as_path()),
       }
    }
 }

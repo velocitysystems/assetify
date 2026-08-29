@@ -13,7 +13,7 @@
 //! Each requested file carries an [`AccessKind`] naming the shape it
 //! will be read in — forward ([`Stream`](AccessKind::Stream)),
 //! positioned ([`Random`](AccessKind::Random)), or by real path
-//! ([`MaterializedPath`](AccessKind::MaterializedPath)). The provider
+//! ([`AssetPath`](AccessKind::AssetPath)). The provider
 //! chooses the backing: heap, memory map, plain file descriptor, or a
 //! real path. See [`AccessKind`] for the first-match rule for picking
 //! one.
@@ -123,7 +123,7 @@ mod store;
 pub mod testing;
 
 pub use contract::{
-   AccessKind, AssetRequest, AssetResponse, FileAccess, FileSpec, MaterializedPath, PreparedAsset,
+   AccessKind, AssetPath, AssetRequest, AssetResponse, FileAccess, FileSpec, PreparedAsset,
    PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};

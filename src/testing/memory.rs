@@ -52,7 +52,7 @@ impl MemoryAsset {
 /// An in-memory [`Provider`]: a map of asset id → files, served
 /// straight from heap buffers.
 ///
-/// [`AccessKind::MaterializedPath`] requests are answered
+/// [`AccessKind::AssetPath`] requests are answered
 /// `Unavailable` — this provider holds no filesystem. Consumers
 /// testing path-based loading should use a filesystem-backed provider
 /// over a temporary directory.
@@ -101,7 +101,7 @@ impl MemoryProvider {
                pos: 0,
             })),
             AccessKind::Random => FileAccess::Random(self.random(Arc::clone(bytes))),
-            AccessKind::MaterializedPath => {
+            AccessKind::AssetPath => {
                return AssetResponse::Unavailable {
                   reason: format!(
                      "MemoryProvider cannot materialize a path for {:?}; \

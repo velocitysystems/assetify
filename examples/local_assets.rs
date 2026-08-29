@@ -29,7 +29,7 @@ fn requests() -> [AssetRequest; 2] {
          vec![
             FileSpec::new("meta.json", AccessKind::Stream),
             FileSpec::new("index.dat", AccessKind::Random),
-            FileSpec::new("rules.txt", AccessKind::MaterializedPath),
+            FileSpec::new("rules.txt", AccessKind::AssetPath),
          ],
       ),
       AssetRequest::new(
@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                   "ranged read"
                );
             }
-            FileAccess::Path(path) => {
+            FileAccess::AssetPath(path) => {
                tracing::info!(asset = %request.id, file = %spec.name, path = %path.display(), "materialized");
             }
          }

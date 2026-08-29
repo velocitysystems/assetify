@@ -138,7 +138,7 @@ fn mmap_random_serves_an_empty_file() {
 
 #[test]
 fn materialized_path_dereferences_to_its_path() {
-   let materialized = assetify::MaterializedPath::new("/data/assets/index.dat");
+   let materialized = assetify::AssetPath::new("/data/assets/index.dat");
    assert_eq!(
       materialized.file_name().and_then(|n| n.to_str()),
       Some("index.dat"),
@@ -285,7 +285,7 @@ async fn memory_provider_declines_materialized_paths_with_guidance() {
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
       1,
-      vec![FileSpec::new("index.dat", AccessKind::MaterializedPath)],
+      vec![FileSpec::new("index.dat", AccessKind::AssetPath)],
    );
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;
    let AssetResponse::Unavailable { reason } = &outcomes[0] else {

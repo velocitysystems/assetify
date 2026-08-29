@@ -1,6 +1,6 @@
 //! The delivery side: what comes back for each requested asset.
 
-use crate::contract::access::{FileAccess, MaterializedPath, RandomAccess, StreamAccess};
+use crate::contract::access::{AssetPath, FileAccess, RandomAccess, StreamAccess};
 
 /// One delivered file, matched to the request by name.
 #[derive(Debug)]
@@ -81,11 +81,11 @@ impl PreparedAsset {
 
    /// Take the named file as a real filesystem path. The counterpart
    /// of [`take_stream`](PreparedAsset::take_stream) for
-   /// [`AccessKind::MaterializedPath`](crate::AccessKind::MaterializedPath)
+   /// [`AccessKind::AssetPath`](crate::AccessKind::AssetPath)
    /// files.
-   pub fn take_path(&mut self, name: &str) -> Option<MaterializedPath> {
+   pub fn take_asset_path(&mut self, name: &str) -> Option<AssetPath> {
       match self.take_file(name)?.access {
-         FileAccess::Path(path) => Some(path),
+         FileAccess::AssetPath(path) => Some(path),
          _ => None,
       }
    }
@@ -99,7 +99,7 @@ mod tests {
    fn typed_accessors_match_kind_and_consume() {
       let mut asset = PreparedAsset::new(vec![
          PreparedFile::new("meta.json", FileAccess::Stream(Box::new(&b"{}"[..]))),
-         PreparedFile::new("rules.txt", FileAccess::Path(MaterializedPath::new("/r"))),
+         PreparedFile::new("rules.txt", FileAccess::AssetPath(AssetPath::new("/r"))),
       ]);
 
       assert!(asset.take_stream("meta.json").is_some());

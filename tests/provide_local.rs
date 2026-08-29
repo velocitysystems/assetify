@@ -31,7 +31,7 @@ fn tokenizer_request() -> AssetRequest {
       vec![
          FileSpec::new("meta.json", AccessKind::Stream),
          FileSpec::new("index.dat", AccessKind::Random),
-         FileSpec::new("rules.txt", AccessKind::MaterializedPath),
+         FileSpec::new("rules.txt", AccessKind::AssetPath),
       ],
    )
 }
@@ -91,7 +91,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
    random.read_at_exact(11, &mut word).unwrap();
    assert_eq!(&word, b"bytes");
 
-   let FileAccess::Path(path) = asset.take_file("rules.txt").unwrap().access else {
+   let FileAccess::AssetPath(path) = asset.take_file("rules.txt").unwrap().access else {
       panic!("materialized kind delivers a path");
    };
    assert_eq!(std::fs::read(&*path).unwrap(), b"rule one");
@@ -290,7 +290,7 @@ async fn materialized_paths_stay_valid_after_the_delivery_is_dropped() {
 
    let path: PathBuf = {
       let mut asset = unwrap_available(engine.asset(tokenizer_request()).await);
-      let FileAccess::Path(materialized) = asset.take_file("rules.txt").unwrap().access else {
+      let FileAccess::AssetPath(materialized) = asset.take_file("rules.txt").unwrap().access else {
          panic!("materialized kind delivers a path");
       };
       materialized.into_path_buf()
