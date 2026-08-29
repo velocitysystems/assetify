@@ -252,6 +252,24 @@ platform-specific setup:
   over assets bundled read-only into the deployment.
 - **Node.js (napi-rs)** — call it from `#[napi]` async functions; reads stay
   in Rust, only results cross the JS bridge.
+- **Not WASM/browser** — assetify is tokio + filesystem + mmap; the browser
+  has none of these.
+
+## Where it fits
+
+- **ML inference apps** — models, tokenizers, dictionaries fetched on first
+  run and served from cache after; the demos exercise exactly this shape.
+  Large-model niceties (download progress, resumption) are not built in yet —
+  `tracing` events are the current signal.
+- **Data-file CLIs and servers** — timezone, geo, and lookup databases;
+  concurrent engines over one cache root are race-safe by design.
+- **Asset packs with many files** — works today at the cost of one request
+  per file; archive support can arrive later as a non-breaking
+  `AssetSource` addition.
+- **Mobile and serverless** — see [`demos/`](demos/): verified on the iOS
+  simulator and via a local Lambda invoke.
+- **Private sources** — presigned URLs work today; authenticated requests
+  (custom headers) are the expected next `Locator` capability.
 
 ## Feature flags
 

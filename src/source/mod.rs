@@ -21,6 +21,11 @@ use thiserror::Error;
 use crate::digest::Digest;
 
 /// Where one file's bytes can be acquired from.
+///
+/// Non-exhaustive so acquisition methods can arrive without breakage
+/// — an authenticated-HTTP variant (custom headers) is the expected
+/// first addition; presigned URLs cover private object storage today.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum Locator {
    /// Fetch over HTTP(S). Presigned object-storage URLs ride this
