@@ -5,32 +5,25 @@
 //! Run with: `cargo run --example local_assets`
 
 use std::io::Read as _;
+use std::path::Path;
 
-use assetify::{AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{
+   AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec, Provider as _,
+};
+use rand::distr::{Alphanumeric, SampleString};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-   // Show the engine's lifecycle events (staging, delivery, fallback).
-   tracing_subscriber::fmt()
-      .with_max_level(tracing::Level::INFO)
-      .without_time()
-      .with_target(false)
-      .compact()
-      .init();
+// The fixtures — shared verbatim with the http_assets example: two
+// language-scoped assets, each a few files of realistic random data.
 
-   // A pre-seeded tree, laid out as <root>/<id>/v<lane>/<revision>/.
-   let root = tempfile::tempdir()?;
-   let revision = root.path().join("nlp/tokenizer/en/v1/20260821");
-   std::fs::create_dir_all(&revision)?;
-   std::fs::write(revision.join("meta.json"), br#"{"format":1}"#)?;
-   std::fs::write(revision.join("index.dat"), b"positioned bytes")?;
-   std::fs::write(revision.join("rules.txt"), b"rule one")?;
+/// Random payload bytes, so sizes and samples look like real data.
+fn random_text(len: usize) -> String {
+   Alphanumeric.sample_string(&mut rand::rng(), len)
+}
 
-   // No resolver: cache-only. A read-only root works too.
-   let engine = Assetify::builder(root.path()).build()?;
-
-   let outcome = engine
-      .asset(AssetRequest::new(
+/// What the consumer asks for: every access kind across two assets.
+fn requests() -> [AssetRequest; 2] {
+   [
+      AssetRequest::new(
          "nlp/tokenizer/en",
          1,
          vec![
@@ -38,33 +31,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             FileSpec::new("index.dat", AccessKind::Random),
             FileSpec::new("rules.txt", AccessKind::MaterializedPath),
          ],
-      ))
-      .await;
+      ),
+      AssetRequest::new(
+         "models/classifier/en",
+         1,
+         vec![
+            FileSpec::new("model.bin", AccessKind::Random),
+            FileSpec::new("labels.txt", AccessKind::Stream),
+         ],
+      ),
+   ]
+}
 
-   let AssetOutcome::Available { mut asset } = outcome else {
-      panic!("the seeded tree serves");
-   };
+fn seed(revision: &Path, files: &[(String, String)]) -> std::io::Result<()> {
+   std::fs::create_dir_all(revision)?;
+   for (name, content) in files {
+      std::fs::write(revision.join(name), content)?;
+   }
+   Ok(())
+}
 
-   let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
-      unreachable!()
-   };
-   let mut meta = String::new();
-   stream.read_to_string(&mut meta)?;
-   tracing::info!(content = %meta, "streamed meta.json");
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+   // Show the engine's lifecycle events (staging, delivery, fallback).
+   tracing_subscriber::fmt()
+      .without_time()
+      .with_target(false)
+      .compact()
+      .init();
 
-   let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
-      unreachable!()
-   };
-   let mut word = [0u8; 5];
-   index.read_at_exact(11, &mut word)?;
-   tracing::info!(
-      content = %String::from_utf8_lossy(&word),
-      "ranged read from index.dat"
-   );
+   // Pre-seed the tree, laid out as <root>/<id>/v<lane>/<revision>/.
+   let root = tempfile::tempdir()?;
+   seed(
+      &root.path().join("nlp/tokenizer/en/v1/20260821"),
+      &[
+         ("meta.json".into(), r#"{"format":1,"language":"en"}"#.into()),
+         ("index.dat".into(), random_text(2048)),
+         ("rules.txt".into(), random_text(256)),
+      ],
+   )?;
+   seed(
+      &root.path().join("models/classifier/en/v1/20260815"),
+      &[
+         ("model.bin".into(), random_text(4096)),
+         ("labels.txt".into(), "positive\nnegative\nneutral".into()),
+      ],
+   )?;
 
-   let FileAccess::Path(path) = asset.take_file("rules.txt").unwrap().access else {
-      unreachable!()
-   };
-   tracing::info!(path = %path.display(), "materialized path");
+   // No resolver: cache-only. A read-only root works too.
+   let engine = Assetify::builder(root.path()).build()?;
+
+   // One batched call for everything this launch needs, then one
+   // match arm per access kind to consume the deliveries.
+   let requests = requests();
+   for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
+      let AssetOutcome::Available { mut asset } = outcome else {
+         panic!("seeded assets serve");
+      };
+      for spec in &request.files {
+         match asset.take_file(&spec.name).unwrap().access {
+            FileAccess::Stream(mut stream) => {
+               let mut bytes = Vec::new();
+               stream.read_to_end(&mut bytes)?;
+               tracing::info!(asset = %request.id, file = %spec.name, bytes = bytes.len(), "streamed");
+            }
+            FileAccess::Random(random) => {
+               let mut sample = [0u8; 12];
+               random.read_at_exact(64, &mut sample)?;
+               tracing::info!(
+                  asset = %request.id,
+                  file = %spec.name,
+                  len = random.len(),
+                  sample = %String::from_utf8_lossy(&sample),
+                  "ranged read"
+               );
+            }
+            FileAccess::Path(path) => {
+               tracing::info!(asset = %request.id, file = %spec.name, path = %path.display(), "materialized");
+            }
+         }
+      }
+   }
    Ok(())
 }
