@@ -1,0 +1,14 @@
+{
+  "name": "node-demo",
+  "private": true,
+  "napi": {
+    "binaryName": "node-demo"
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "start": "node index.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.8.6"
+  }
+}
