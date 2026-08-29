@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 #[cfg(not(feature = "mmap"))]
 use crate::access::FileRandom;
@@ -107,10 +107,12 @@ impl Assetify {
             .await?
       };
 
+      // Recover from a poisoned lock: the maps hold plain
+      // bookkeeping, valid regardless of a panicking peer.
       self
          .last_served
          .lock()
-         .unwrap()
+         .unwrap_or_else(PoisonError::into_inner)
          .insert(slot, revision.clone());
 
       let revision_dir = self
@@ -296,7 +298,7 @@ impl Assetify {
          self
             .flights
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .entry(slot.clone())
             .or_default(),
       )
@@ -306,7 +308,7 @@ impl Assetify {
       let revision = self
          .last_served
          .lock()
-         .unwrap()
+         .unwrap_or_else(PoisonError::into_inner)
          .get(slot)
          .cloned()
          .or_else(|| self.store.newest_revision(&slot.0, slot.1));

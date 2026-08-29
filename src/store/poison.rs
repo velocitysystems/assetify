@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 /// The marker file's name. Reserved: validated revision and file
 /// names can never collide with it (they cannot start with `.`).
@@ -35,17 +35,24 @@ impl PoisonLedger {
       if std::fs::write(revision_dir.join(MARKER), reason).is_err() {
          // Read-only root (or the directory vanished): remember for
          // this process's lifetime instead.
+         // Recover from a poisoned lock: the set stays valid
+         // regardless of a panicking peer.
          self
             .memory
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(revision_dir.to_path_buf());
       }
    }
 
    /// Whether a revision directory has been poisoned.
    pub(crate) fn is_poisoned(&self, revision_dir: &Path) -> bool {
-      revision_dir.join(MARKER).exists() || self.memory.lock().unwrap().contains(revision_dir)
+      revision_dir.join(MARKER).exists()
+         || self
+            .memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(revision_dir)
    }
 }
 

@@ -5,7 +5,7 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileSpec};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, FileSpec};
 use tauri::Manager as _;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,7 +24,7 @@ pub fn run() {
          seed(&cache_root)?;
 
          let engine = Assetify::builder(&cache_root).build()?;
-         tauri::async_runtime::block_on(load(&engine));
+         tauri::async_runtime::block_on(load(&engine))?;
 
          // Headless demo: done once assets are served. On mobile the
          // app stays alive (platforms dislike self-termination).
@@ -48,7 +48,7 @@ fn seed(cache_root: &Path) -> std::io::Result<()> {
    std::fs::write(revision.join("index.dat"), "tokenizer index bytes")
 }
 
-async fn load(engine: &Assetify) {
+async fn load(engine: &Assetify) -> std::io::Result<()> {
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
       1,
@@ -59,13 +59,18 @@ async fn load(engine: &Assetify) {
    );
    match engine.asset(request).await {
       AssetResponse::Available { mut asset } => {
-         let mut stream = asset.take_stream("meta.json").expect("requested as a stream");
+         let mut stream = asset
+            .take_stream("meta.json")
+            .expect("requested as a stream");
          let mut meta = String::new();
-         stream.read_to_string(&mut meta).unwrap();
+         stream.read_to_string(&mut meta)?;
 
-         let index = asset.take_random("index.dat").expect("requested as random access");
+         let index = asset
+            .take_random("index.dat")
+            .expect("requested as random access");
          tracing::info!(meta = %meta, index_bytes = index.len(), "assets loaded in the app shell");
       }
       AssetResponse::Unavailable { reason } => tracing::warn!(%reason, "unavailable"),
    }
+   Ok(())
 }

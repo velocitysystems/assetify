@@ -66,7 +66,7 @@ async fn publish(
             format!("{}/{id}/{revision}/{name}", server.uri()),
             &hex::encode(sha2::Sha256::digest(content.as_bytes())),
          )
-         .unwrap(),
+         .expect("a hex-encoded sha-256 is a valid digest"),
       );
    }
    AssetSource::new(revision, sources)
@@ -121,7 +121,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
          panic!("published assets serve");
       };
       for spec in &request.files {
-         match asset.take_file(&spec.name).unwrap().access {
+         match asset
+            .take_file(&spec.name)
+            .expect("requested files are delivered")
+            .access
+         {
             FileAccess::Stream(mut stream) => {
                let mut bytes = Vec::new();
                stream.read_to_end(&mut bytes)?;
