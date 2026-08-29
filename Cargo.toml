@@ -7,6 +7,7 @@ license = "MIT"
 description = "Declare your assets; assetify fetches, verifies, caches, and serves them — as a stream, random access, or a path, online or offline."
 repository = "https://github.com/velocitysystems/assetify"
 readme = "README.md"
+exclude = ["/demos"]
 keywords = ["assets", "cache", "offline", "download", "mmap"]
 categories = ["caching", "filesystem", "asynchronous"]
 
