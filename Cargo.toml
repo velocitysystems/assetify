@@ -9,12 +9,15 @@ repository = "https://github.com/velocitysystems/assetify"
 readme = "README.md"
 
 [features]
-default = []
+default = ["mmap"]
+mmap = ["dep:memmap2"]
 test-util = []
 
 [dependencies]
 async-trait = "0.1"
+memmap2 = { version = "0.9", optional = true }
 
 [dev-dependencies]
-assetify = { path = ".", features = ["test-util"] }
+assetify = { path = ".", default-features = false, features = ["test-util"] }
+tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

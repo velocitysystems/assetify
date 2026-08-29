@@ -1,0 +1,52 @@
+//! Plain-file backing: positioned reads straight off an open file
+//! descriptor, no window. The minimal correct backing — and the
+//! working proof that [`RandomAccess::as_bytes`] is optional:
+//! consumers needing contiguous bytes materialize their own copy when
+//! handed one of these.
+
+use std::fs::File;
+use std::io;
+use std::path::Path;
+
+use crate::contract::access::RandomAccess;
+
+/// [`RandomAccess`] over an open file descriptor.
+///
+/// Both platforms' positioned-read primitives take `&self`, so the
+/// trait's shared-reference contract is free here — no locking.
+pub struct FileRandom {
+   file: File,
+   len: u64,
+}
+
+impl FileRandom {
+   /// Open a file for positioned reads. The length is captured at
+   /// open; the file is expected not to change while served, which
+   /// the store guarantees by never mutating a placed revision.
+   pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+      let file = File::open(path)?;
+      let len = file.metadata()?.len();
+      Ok(FileRandom { file, len })
+   }
+}
+
+impl RandomAccess for FileRandom {
+   fn len(&self) -> u64 {
+      self.len
+   }
+
+   fn read_at(&self, offset: u64, buf: &mut [u8]) -> io::Result<usize> {
+      #[cfg(unix)]
+      {
+         std::os::unix::fs::FileExt::read_at(&self.file, buf, offset)
+      }
+      #[cfg(windows)]
+      {
+         // Moves the file cursor as a side effect; harmless because
+         // this backing never uses the cursor.
+         std::os::windows::fs::FileExt::seek_read(&self.file, buf, offset)
+      }
+   }
+
+   // as_bytes: default `None`. Nothing is kept addressable.
+}

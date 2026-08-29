@@ -92,6 +92,64 @@ fn memory_random_conforms() {
    );
 }
 
+#[test]
+fn file_random_conforms() {
+   let dir = tempfile::tempdir().unwrap();
+   let path = dir.path().join("payload.bin");
+   std::fs::write(&path, PAYLOAD).unwrap();
+
+   let backing = assetify::access::FileRandom::open(&path).unwrap();
+   assert_random_access_conformant(&backing);
+   assert!(
+      backing.as_bytes().is_none(),
+      "plain-file backing keeps nothing addressable"
+   );
+}
+
+#[cfg(feature = "mmap")]
+#[test]
+fn mmap_random_conforms() {
+   let dir = tempfile::tempdir().unwrap();
+   let path = dir.path().join("payload.bin");
+   std::fs::write(&path, PAYLOAD).unwrap();
+
+   let backing = assetify::access::MmapRandom::open(&path).unwrap();
+   assert_random_access_conformant(&backing);
+   assert_eq!(
+      backing.as_bytes(),
+      Some(PAYLOAD),
+      "mmap backing offers the whole file as the window"
+   );
+}
+
+#[cfg(feature = "mmap")]
+#[test]
+fn mmap_random_serves_an_empty_file() {
+   let dir = tempfile::tempdir().unwrap();
+   let path = dir.path().join("empty.bin");
+   std::fs::write(&path, b"").unwrap();
+
+   let backing = assetify::access::MmapRandom::open(&path).unwrap();
+   assert!(backing.is_empty());
+   assert_eq!(backing.as_bytes(), Some(&[][..]));
+   let mut buf = [0u8; 4];
+   assert_eq!(backing.read_at(0, &mut buf).unwrap(), 0);
+}
+
+#[test]
+fn materialized_path_dereferences_to_its_path() {
+   let materialized = assetify::MaterializedPath::new("/data/assets/index.dat");
+   assert_eq!(
+      materialized.file_name().and_then(|n| n.to_str()),
+      Some("index.dat"),
+      "Deref<Target = Path> exposes Path methods directly"
+   );
+   assert_eq!(
+      materialized.as_path(),
+      std::path::Path::new("/data/assets/index.dat")
+   );
+}
+
 #[tokio::test]
 async fn every_window_mode_is_consumer_equivalent() {
    let mut resident_views = Vec::new();
