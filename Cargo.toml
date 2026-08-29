@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT"
-description = "Portable asset access: declare the files you need and how you'll read them; get verified, cached, offline-capable local assets behind generic access traits."
+description = "Declare your assets; assetify fetches, verifies, caches, and serves them — as a stream, random access, or a path, online or offline."
 repository = "https://github.com/velocitysystems/assetify"
 readme = "README.md"
 
