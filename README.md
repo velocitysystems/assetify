@@ -295,9 +295,9 @@ tracing_subscriber::fmt().init();
 
 ```
 <root>/
-├── .staging/                  downloads assemble and verify here…
-└── tokenizer/en/          …then the whole set renames into place
-    ├── 20260812/              revisions: immutable, newest wins
+├── .staging/          downloads assemble and verify here…
+└── tokenizer/en/      …then the whole set renames into place
+    ├── 20260812/      revisions: immutable, newest wins
     └── 20260821/model.bin
 ```
 
@@ -320,7 +320,7 @@ processes) race harmlessly.
 Anywhere Rust does — assetify is a plain library on tokio, with no
 platform-specific setup:
 
-- **Desktop / mobile (e.g. Tauri)** — pass your app data directory as the
+- **Desktop / mobile (e.g. Tauri)** — pass your app cache directory as the
   cache root.
 - **AWS Lambda** — cache to `/tmp` with the `reqwest` feature, or run cache-only
   over assets bundled read-only into the deployment.
@@ -342,8 +342,9 @@ platform-specific setup:
   `AssetSource` addition.
 - **Mobile and serverless** — see [`demos/`](demos/): verified on the iOS
   simulator and via a local Lambda invoke.
-- **Private sources** — presigned URLs work today; authenticated requests
-  (custom headers) are the expected next `Locator` capability.
+- **Private sources** — presigned URLs work with the built-in fetcher;
+  for authenticated requests (custom headers, request signing), supply
+  your own `Fetcher`.
 
 ## Feature flags
 
@@ -363,6 +364,10 @@ cargo run --example http_assets --features reqwest
 Both are self-contained (temp directories; the HTTP one runs its own mock
 server) and log the engine's lifecycle: `staged` per verified file, `placed`
 for the committed revision, `delivered` for the served asset.
+
+For full platform integrations — Tauri (desktop, iOS, Android), Node.js via
+napi-rs, and AWS Lambda, all serving one shared fixture asset — see
+[`demos/`](demos/).
 
 ## License
 
