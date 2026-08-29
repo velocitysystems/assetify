@@ -2,7 +2,7 @@
 //! them — the shape of a serverless function serving assets bundled
 //! into its deployment package, or a test running over fixtures.
 //!
-//! Run with: `cargo run --example local_tree`
+//! Run with: `cargo run --example local_assets`
 
 use std::io::Read as _;
 
@@ -10,6 +10,14 @@ use assetify::{AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, Fil
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+   // Show the engine's lifecycle events (staging, delivery, fallback).
+   tracing_subscriber::fmt()
+      .with_max_level(tracing::Level::INFO)
+      .without_time()
+      .with_target(false)
+      .compact()
+      .init();
+
    // A pre-seeded tree, laid out as <root>/<id>/v<lane>/<revision>/.
    let root = tempfile::tempdir()?;
    let revision = root.path().join("nlp/tokenizer/en/v1/20260821");
@@ -42,21 +50,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    };
    let mut meta = String::new();
    stream.read_to_string(&mut meta)?;
-   println!("streamed meta.json: {meta}");
+   tracing::info!(content = %meta, "streamed meta.json");
 
    let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
       unreachable!()
    };
    let mut word = [0u8; 5];
    index.read_at_exact(11, &mut word)?;
-   println!(
-      "ranged read from index.dat: {}",
-      String::from_utf8_lossy(&word)
+   tracing::info!(
+      content = %String::from_utf8_lossy(&word),
+      "ranged read from index.dat"
    );
 
    let FileAccess::Path(path) = asset.take_file("rules.txt").unwrap().access else {
       unreachable!()
    };
-   println!("materialized path: {}", path.display());
+   tracing::info!(path = %path.display(), "materialized path");
    Ok(())
 }

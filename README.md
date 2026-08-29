@@ -86,6 +86,17 @@ consumer runs correctly on the `read_at` floor alone. Don't care? Declaring
 | `http` | | downloading via `Locator::HTTP` (reqwest + rustls) |
 | `test-util` | | `testing::MemoryProvider` — test your loading code with no filesystem or network |
 
+## Examples
+
+```sh
+cargo run --example local_assets
+cargo run --example http_assets --features http
+```
+
+Both are self-contained (temp directories; the HTTP one runs its own mock
+server) and log the engine's lifecycle: `staged` per verified file, `placed`
+for the committed revision, `delivered` for the served asset.
+
 ## Where it runs
 
 - **Desktop / mobile (e.g. Tauri):** pass your app data directory as the cache

@@ -116,7 +116,15 @@ impl Assetify {
       let revision_dir = self
          .store
          .revision_dir(&request.id, request.format_major, &revision);
-      self.serve(request, &revision_dir)
+      let asset = self.serve(request, &revision_dir)?;
+      tracing::info!(
+         asset = %request.id,
+         lane = request.format_major,
+         revision = %revision,
+         files = asset.files.len(),
+         "delivered"
+      );
+      Ok(asset)
    }
 
    /// The revision this request will be served from — the resolver's
@@ -145,6 +153,12 @@ impl Assetify {
          return self.fallback(id, format_major, &reason);
       }
       if self.store.has_revision(id, format_major, &source.revision) {
+         tracing::debug!(
+            asset = %id,
+            lane = format_major,
+            revision = %source.revision,
+            "cache hit"
+         );
          return Ok(source.revision);
       }
       if self
@@ -203,13 +217,26 @@ impl Assetify {
          if !file.digest.matches_sha256(&computed) {
             return Err(format!("digest mismatch for {:?}", file.name));
          }
+         tracing::info!(
+         asset = %id,
+            revision = %source.revision,
+            file = %file.name,
+            "staged"
+         );
       }
 
       self
          .store
          .place_revision(staged, id, format_major, &source.revision)
          .map(|_| ()) // AlreadyPresent: a racing writer won; same result.
-         .map_err(|e| format!("cannot place revision {:?}: {e}", source.revision))
+         .map_err(|e| format!("cannot place revision {:?}: {e}", source.revision))?;
+      tracing::info!(
+         asset = %id,
+         lane = format_major,
+         revision = %source.revision,
+         "placed"
+      );
+      Ok(())
    }
 
    #[cfg(feature = "http")]
@@ -234,9 +261,21 @@ impl Assetify {
    /// The newest serviceable on-disk revision, or the reason there is
    /// nothing to serve.
    fn fallback(&self, id: &str, format_major: u32, reason: &str) -> Result<String, String> {
-      self.store.newest_revision(id, format_major).ok_or_else(|| {
-         format!("{reason}; nothing servable on disk in lane v{format_major} of {id:?}")
-      })
+      match self.store.newest_revision(id, format_major) {
+         Some(revision) => {
+            tracing::warn!(
+               asset = %id,
+               lane = format_major,
+               revision = %revision,
+               %reason,
+               "serving newest on-disk revision"
+            );
+            Ok(revision)
+         }
+         None => Err(format!(
+            "{reason}; nothing servable on disk in lane v{format_major} of {id:?}"
+         )),
+      }
    }
 
    /// Open every requested file of a served revision behind the
@@ -272,6 +311,13 @@ impl Assetify {
          .cloned()
          .or_else(|| self.store.newest_revision(&slot.0, slot.1));
       if let Some(revision) = revision {
+         tracing::warn!(
+               asset = %slot.0,
+            lane = slot.1,
+            revision = %revision,
+            %reason,
+            "poisoned rejected revision"
+         );
          self
             .store
             .poison_revision(&slot.0, slot.1, &revision, reason);

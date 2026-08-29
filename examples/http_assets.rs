@@ -1,7 +1,7 @@
 //! Download, verify, cache, serve — against a local mock server so
 //! the example is self-contained.
 //!
-//! Run with: `cargo run --example http_fetch --features http`
+//! Run with: `cargo run --example http_assets --features http`
 
 use sha2::Digest as _;
 
@@ -12,6 +12,14 @@ use assetify::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+   // Show the engine's lifecycle events (staging, delivery, fallback).
+   tracing_subscriber::fmt()
+      .with_max_level(tracing::Level::INFO)
+      .without_time()
+      .with_target(false)
+      .compact()
+      .init();
+
    // A stand-in for wherever your assets are published.
    let server = wiremock::MockServer::start().await;
    let body = b"model weights".to_vec();
@@ -52,9 +60,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
          let FileAccess::Random(model) = &asset.file("model.bin").unwrap().access else {
             unreachable!()
          };
-         println!("downloaded, verified, and cached {} bytes", model.len());
+         tracing::info!(bytes = model.len(), "downloaded, verified, and cached");
       }
-      AssetOutcome::Unavailable { reason } => println!("unavailable: {reason}"),
+      AssetOutcome::Unavailable { reason } => tracing::warn!(%reason, "unavailable"),
    }
 
    // A second request never touches the network: the revision is
