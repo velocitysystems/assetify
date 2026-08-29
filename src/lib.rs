@@ -39,6 +39,76 @@
 //! [`RejectedDelivery`] so a cached copy is re-acquired rather than
 //! re-served.
 //!
+//! # Quick start
+//!
+//! ```no_run
+//! use assetify::{
+//!    AccessKind, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec, Locator,
+//!    StaticResolver,
+//! };
+//!
+//! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
+//! let engine = Assetify::builder("/var/cache/my-app/assets")
+//!    .resolver(StaticResolver::new([(
+//!       "nlp/tokenizer/en",
+//!       1,
+//!       AssetSource::new(
+//!          "20260821",
+//!          vec![FileSource::new(
+//!             "model.bin",
+//!             Locator::HTTP {
+//!                url: "https://assets.example.com/tokenizer/20260821/model.bin".to_string(),
+//!             },
+//!             Digest::sha256_hex(
+//!                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+//!             )?,
+//!          )],
+//!       ),
+//!    )]))
+//!    .build()?;
+//!
+//! let outcome = engine
+//!    .asset(AssetRequest::new(
+//!       "nlp/tokenizer/en",
+//!       1,
+//!       vec![FileSpec::new("model.bin", AccessKind::Random)],
+//!    ))
+//!    .await;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! Omit the resolver for **cache-only mode**: the engine serves what
+//! the root already holds (a read-only root is fine — assets bundled
+//! into a deployment are served in place).
+//!
+//! # Versioning: one hard axis, one soft
+//!
+//! A request names a `format_major` — the payload format lane this
+//! consumer build can read. That axis is hard: lanes are never
+//! crossed, so an upgraded application is never handed a payload it
+//! cannot parse, and the cache keys revisions inside their lane
+//! (`<root>/<id>/v<lane>/<revision>/`). Which *revision* serves is
+//! soft and wholly the provider's: prefer what the resolver names,
+//! fall back to the newest verified revision on disk when
+//! acquisition fails — an offline device keeps working on what it
+//! has rather than refusing service over staleness.
+//!
+//! # Embedding
+//!
+//! **Serverless (read-only filesystems):** point the cache root at
+//! the writable scratch area (`/tmp` on AWS Lambda) with the `http`
+//! feature, or bundle assets into the deployment and run cache-only
+//! over the bundle directory.
+//!
+//! **Node.js (napi-rs):** assetify is a plain library on tokio; call
+//! it from `#[napi]` async functions. Access objects stay on the Rust
+//! side — only serializable results cross the JS bridge. Expose
+//! long-running probing (memory-mapped `Random` files) through
+//! *async* exports so page faults never stall the event loop, and
+//! prefer an explicit `dispose()` on wrapper objects over relying on
+//! the JS garbage collector to drop Rust resources.
+//!
 //! # Testing consumers
 //!
 //! Enable the `test-util` feature for
