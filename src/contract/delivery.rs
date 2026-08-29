@@ -1,6 +1,6 @@
 //! The delivery side: what comes back for each requested asset.
 
-use crate::contract::access::FileAccess;
+use crate::contract::access::{FileAccess, MaterializedPath, RandomAccess, StreamAccess};
 
 /// One delivered file, matched to the request by name.
 #[derive(Debug)]
@@ -55,6 +55,58 @@ impl PreparedAsset {
    pub fn take_file(&mut self, name: &str) -> Option<PreparedFile> {
       let i = self.files.iter().position(|f| f.name == name)?;
       Some(self.files.swap_remove(i))
+   }
+
+   /// Take the named file as a forward reader. When the file was
+   /// requested with [`AccessKind::Stream`](crate::AccessKind::Stream),
+   /// this cannot miss — the delivered kind always matches the
+   /// requested kind. `None` means the file is absent or was requested
+   /// with a different kind (the file is consumed either way).
+   pub fn take_stream(&mut self, name: &str) -> Option<StreamAccess> {
+      match self.take_file(name)?.access {
+         FileAccess::Stream(stream) => Some(stream),
+         _ => None,
+      }
+   }
+
+   /// Take the named file as positioned access. The counterpart of
+   /// [`take_stream`](PreparedAsset::take_stream) for
+   /// [`AccessKind::Random`](crate::AccessKind::Random) files.
+   pub fn take_random(&mut self, name: &str) -> Option<Box<dyn RandomAccess>> {
+      match self.take_file(name)?.access {
+         FileAccess::Random(random) => Some(random),
+         _ => None,
+      }
+   }
+
+   /// Take the named file as a real filesystem path. The counterpart
+   /// of [`take_stream`](PreparedAsset::take_stream) for
+   /// [`AccessKind::MaterializedPath`](crate::AccessKind::MaterializedPath)
+   /// files.
+   pub fn take_path(&mut self, name: &str) -> Option<MaterializedPath> {
+      match self.take_file(name)?.access {
+         FileAccess::Path(path) => Some(path),
+         _ => None,
+      }
+   }
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   #[test]
+   fn typed_accessors_match_kind_and_consume() {
+      let mut asset = PreparedAsset::new(vec![
+         PreparedFile::new("meta.json", FileAccess::Stream(Box::new(&b"{}"[..]))),
+         PreparedFile::new("rules.txt", FileAccess::Path(MaterializedPath::new("/r"))),
+      ]);
+
+      assert!(asset.take_stream("meta.json").is_some());
+      assert!(asset.take_stream("meta.json").is_none(), "consumed");
+
+      assert!(asset.take_stream("rules.txt").is_none(), "wrong kind");
+      assert!(asset.take_random("absent.bin").is_none(), "named gap");
    }
 }
 

@@ -10,7 +10,7 @@
 use std::io::Read as _;
 use std::path::PathBuf;
 
-use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileSpec};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 
@@ -40,15 +40,11 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
 
    match engine.asset(request).await {
       AssetResponse::Available { mut asset } => {
-         let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
-            unreachable!()
-         };
+         let mut stream = asset.take_stream("meta.json").expect("requested as a stream");
          let mut meta = String::new();
          stream.read_to_string(&mut meta)?;
 
-         let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
-            unreachable!()
-         };
+         let index = asset.take_random("index.dat").expect("requested as random access");
          Ok(json!({
             "id": "nlp/tokenizer/en",
             "revisionMeta": meta,

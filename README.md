@@ -128,6 +128,10 @@ match asset.take_file("model.bin").unwrap().access {
 }
 ```
 
+Know the kind you asked for? Skip the `match`: `take_stream(name)`,
+`take_random(name)`, and `take_path(name)` return the object directly —
+`None` only when the name is absent or the kind differs from the request.
+
 ### Custom sources
 
 One rule: **sources known up front → `StaticResolver`; sources computed at

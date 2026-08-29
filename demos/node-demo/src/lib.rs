@@ -4,7 +4,7 @@
 
 use std::io::Read as _;
 
-use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileSpec};
 use napi_derive::napi;
 
 /// What crosses the bridge: names and sizes, never bytes or handles.
@@ -42,15 +42,11 @@ pub async fn load_asset(cache_dir: String) -> napi::Result<AssetSummary> {
 
    match engine.asset(request).await {
       AssetResponse::Available { mut asset } => {
-         let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
-            unreachable!()
-         };
+         let mut stream = asset.take_stream("meta.json").expect("requested as a stream");
          let mut meta = String::new();
          stream.read_to_string(&mut meta).map_err(reason)?;
 
-         let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
-            unreachable!()
-         };
+         let index = asset.take_random("index.dat").expect("requested as random access");
          Ok(AssetSummary {
             id: "nlp/tokenizer/en".to_string(),
             revision_meta: meta,
