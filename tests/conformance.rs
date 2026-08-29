@@ -62,7 +62,7 @@ fn assert_random_access_conformant(access: &dyn RandomAccess) {
 
 fn provider(mode: WindowMode) -> MemoryProvider {
    MemoryProvider::new(mode).with_asset(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       MemoryAsset::new()
          .with_file("meta.json", br#"{"format":1}"#.to_vec())
          .with_file("model.bin", (0u8..=255).collect::<Vec<u8>>())
@@ -72,7 +72,7 @@ fn provider(mode: WindowMode) -> MemoryProvider {
 
 fn fixture_request() -> AssetRequest {
    AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       vec![
          FileRequest::new("meta.json", AccessKind::Stream),
          FileRequest::new("model.bin", AccessKind::Random),
@@ -253,7 +253,7 @@ async fn resident_access_is_shareable_across_threads() {
 async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
    let requests = [
       AssetRequest::new(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          vec![FileRequest::new("missing.dat", AccessKind::Stream)],
       ),
       fixture_request(),
@@ -281,7 +281,7 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
 #[tokio::test]
 async fn memory_provider_declines_materialized_paths_with_guidance() {
    let request = AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       vec![FileRequest::new("index.dat", AccessKind::AssetPath)],
    );
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;

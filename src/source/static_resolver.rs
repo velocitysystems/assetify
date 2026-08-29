@@ -52,7 +52,7 @@ mod tests {
          Digest::sha256_hex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
             .unwrap();
       let resolver = StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          AssetSource::new(
             "20260821",
             vec![FileSource::new(
@@ -63,7 +63,7 @@ mod tests {
          ),
       )]);
 
-      let hit = resolver.resolve("nlp/tokenizer/en").await.unwrap();
+      let hit = resolver.resolve("tokenizer/en").await.unwrap();
       assert_eq!(hit.unwrap().revision, "20260821");
       assert!(resolver.resolve("unknown").await.unwrap().is_none());
    }

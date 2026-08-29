@@ -1,0 +1,12 @@
+{
+   "name": "en-tokenizer",
+   "language": "en",
+   "revision": "20260821",
+   "vocabSize": 1000,
+   "vocabulary": "sampled from the EFF large wordlist (CC BY 3.0)",
+   "files": {
+      "meta.json": "this model card",
+      "vocab.txt": "newline-delimited vocabulary, one token per line",
+      "index.dat": "AIDX header (magic, u32-le entry count), then u32-le byte offsets into vocab.txt"
+   }
+}

@@ -24,7 +24,7 @@ fn random_text(len: usize) -> String {
 fn requests() -> [AssetRequest; 2] {
    [
       AssetRequest::new(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          [
             ("meta.json", AccessKind::Stream),
             ("index.dat", AccessKind::Random),
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    let server = wiremock::MockServer::start().await;
    let tokenizer = publish(
       &server,
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       "20260821",
       &[
          ("meta.json".into(), r#"{"format":1,"language":"en"}"#.into()),
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    let cache = tempfile::tempdir()?;
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([
-         ("nlp/tokenizer/en", tokenizer),
+         ("tokenizer/en", tokenizer),
          ("models/classifier/en", classifier),
       ]))
       .build()?;

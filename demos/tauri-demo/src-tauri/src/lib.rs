@@ -1,12 +1,15 @@
-//! assetify inside a headless Tauri app: no windows, no webview —
-//! assets load in the `setup` hook against the app's real cache
-//! directory, exactly where a shipping app would warm them up.
+//! assetify inside a Tauri app: the engine lives in managed state,
+//! the webview asks for assets over IPC, every read happens in Rust,
+//! and only a serializable summary crosses into JavaScript.
 
 use std::io::Read as _;
 use std::path::Path;
 
 use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
 use tauri::Manager as _;
+
+/// The engine, built once in `setup` and shared with every command.
+struct Engine(Assetify);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,54 +25,124 @@ pub fn run() {
          // directory is assetify's cache root.
          let cache_root = app.path().app_cache_dir()?;
          seed(&cache_root)?;
-
-         let engine = Assetify::builder(&cache_root).build()?;
-         tauri::async_runtime::block_on(load(&engine))?;
-
-         // Headless demo: done once assets are served. On mobile the
-         // app stays alive (platforms dislike self-termination).
-         #[cfg(desktop)]
-         app.handle().exit(0);
+         app.manage(Engine(Assetify::builder(&cache_root).build()?));
          Ok(())
       })
+      .invoke_handler(tauri::generate_handler![load_assets])
       .run(tauri::generate_context!())
       .expect("error while running tauri application");
 }
 
 /// Seed the cache tree a shipping app would have downloaded earlier:
-/// <root>/<id>/<revision>/<files>. Idempotent across runs.
+/// <root>/<id>/<revision>/<files>. The shared fixture tree at
+/// `demos/assets` is compiled in, so the demo carries its assets onto
+/// devices and simulators. Idempotent across runs.
 fn seed(cache_root: &Path) -> std::io::Result<()> {
-   let revision = cache_root.join("nlp/tokenizer/en/20260821");
+   const FILES: [(&str, &[u8]); 3] = [
+      (
+         "meta.json",
+         include_bytes!("../../../assets/tokenizer/en/20260821/meta.json"),
+      ),
+      (
+         "index.dat",
+         include_bytes!("../../../assets/tokenizer/en/20260821/index.dat"),
+      ),
+      (
+         "vocab.txt",
+         include_bytes!("../../../assets/tokenizer/en/20260821/vocab.txt"),
+      ),
+   ];
+
+   let revision = cache_root.join("tokenizer/en/20260821");
    std::fs::create_dir_all(&revision)?;
-   std::fs::write(
-      revision.join("meta.json"),
-      r#"{"format":1,"language":"en"}"#,
-   )?;
-   std::fs::write(revision.join("index.dat"), "tokenizer index bytes")
+   for (name, bytes) in FILES {
+      std::fs::write(revision.join(name), bytes)?;
+   }
+   Ok(())
 }
 
-async fn load(engine: &Assetify) -> std::io::Result<()> {
+/// The IPC boundary: the webview invokes this, the reads happen here,
+/// and only the summary crosses back.
+#[tauri::command]
+async fn load_assets(engine: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
    let request = AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       [
          ("meta.json", AccessKind::Stream),
          ("index.dat", AccessKind::Random),
+         ("vocab.txt", AccessKind::AssetPath),
       ],
    );
-   match engine.asset(request).await {
-      AssetResponse::Available { mut asset } => {
-         let mut stream = asset
-            .take_stream("meta.json")
-            .expect("requested as a stream");
-         let mut meta = String::new();
-         stream.read_to_string(&mut meta)?;
 
-         let index = asset
-            .take_random("index.dat")
-            .expect("requested as random access");
-         tracing::info!(meta = %meta, index_bytes = index.len(), "assets loaded in the app shell");
-      }
-      AssetResponse::Unavailable { reason } => tracing::warn!(%reason, "unavailable"),
+   let mut asset = match engine.0.asset(request).await {
+      AssetResponse::Available { asset } => asset,
+      AssetResponse::Unavailable { reason } => return Err(reason),
+   };
+
+   // Stream: one forward parse of the model card.
+   let mut stream = asset
+      .take_stream("meta.json")
+      .expect("requested as a stream");
+   let mut card = String::new();
+   stream
+      .read_to_string(&mut card)
+      .map_err(|e| e.to_string())?;
+   let meta: serde_json::Value = serde_json::from_str(&card).map_err(|e| e.to_string())?;
+   let language = meta["language"].as_str().unwrap_or("unknown").to_string();
+   let declared = meta["vocabSize"].as_u64().unwrap_or(0) as u32;
+
+   // AssetPath: read the vocabulary by real path, the way a tokenizer
+   // library opening its own files would.
+   let vocab_path = asset
+      .take_asset_path("vocab.txt")
+      .expect("requested as a path");
+   let vocab = std::fs::read_to_string(vocab_path.as_path()).map_err(|e| e.to_string())?;
+   let vocab_words = vocab.lines().count() as u32;
+
+   // Random: decode the index header, then look tokens up through it
+   // — a positioned read per entry, never a scan.
+   let index = asset
+      .take_random("index.dat")
+      .expect("requested as random access");
+   let mut header = [0u8; 8];
+   index
+      .read_at_exact(0, &mut header)
+      .map_err(|e| e.to_string())?;
+   if &header[0..4] != b"AIDX" {
+      return Err("index.dat: invalid header".to_string());
    }
-   Ok(())
+   let entries = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+   if entries == 0 {
+      return Err("index.dat: empty index".to_string());
+   }
+
+   let mut sample_tokens = Vec::new();
+   // Entries picked for recognizable words in this revision.
+   for entry in [320u32, 643, 810] {
+      let mut raw = [0u8; 4];
+      index
+         .read_at_exact(8 + u64::from(entry) * 4, &mut raw)
+         .map_err(|e| e.to_string())?;
+      let offset = u32::from_le_bytes(raw) as usize;
+      let token = vocab[offset..].lines().next().unwrap_or("").to_string();
+      sample_tokens.push(token);
+   }
+
+   let consistent =
+      vocab_words == declared && entries == declared && sample_tokens.iter().all(|t| !t.is_empty());
+   tracing::info!(
+      %language,
+      vocab_words,
+      index_entries = entries,
+      consistent,
+      "assets loaded and summarized for the webview"
+   );
+   Ok(serde_json::json!({
+      "id": "tokenizer/en",
+      "language": language,
+      "vocabWords": vocab_words,
+      "indexEntries": entries,
+      "sampleTokens": sample_tokens,
+      "consistent": consistent,
+   }))
 }

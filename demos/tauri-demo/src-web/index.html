@@ -1,4 +1,23 @@
 <!doctype html>
-<!-- The demo runs headless (no windows); this stub only satisfies the
-     frontendDist requirement. -->
+<meta charset="utf-8" />
 <title>tauri-demo</title>
+<style>
+   body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin: 1.5rem;
+   }
+</style>
+<h3>assetify &middot; tokenizer/en</h3>
+<pre id="out">loading&hellip;</pre>
+<script>
+   // The whole frontend: one IPC call, render what comes back. Every
+   // asset read already happened on the Rust side.
+   window.__TAURI__.core
+      .invoke("load_assets")
+      .then((summary) => {
+         document.getElementById("out").textContent = JSON.stringify(summary, null, 2);
+      })
+      .catch((reason) => {
+         document.getElementById("out").textContent = "unavailable: " + reason;
+      });
+</script>

@@ -7,6 +7,13 @@
     "frontendDist": "../src-web"
   },
   "app": {
-    "windows": []
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "tauri-demo",
+        "width": 520,
+        "height": 420
+      }
+    ]
   }
 }

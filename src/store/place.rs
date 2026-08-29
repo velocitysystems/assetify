@@ -88,7 +88,7 @@ mod tests {
       let staged = stage(root.path()).unwrap();
       std::fs::write(staged.path().join("index.dat"), b"payload").unwrap();
 
-      let destination = root.path().join("nlp/tokenizer/en/v4/20260821");
+      let destination = root.path().join("tokenizer/en/v4/20260821");
       assert_eq!(place(staged, &destination).unwrap(), Placement::Placed);
       assert_eq!(
          std::fs::read(destination.join("index.dat")).unwrap(),

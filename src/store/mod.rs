@@ -97,22 +97,22 @@ mod tests {
       std::fs::write(staged.path().join("meta.json"), b"{}").unwrap();
       assert_eq!(
          store
-            .place_revision(staged, "nlp/tokenizer/en", "20260821")
+            .place_revision(staged, "tokenizer/en", "20260821")
             .unwrap(),
          Placement::Placed
       );
 
-      assert!(store.has_revision("nlp/tokenizer/en", "20260821"));
+      assert!(store.has_revision("tokenizer/en", "20260821"));
       assert_eq!(
-         store.newest_revision("nlp/tokenizer/en").as_deref(),
+         store.newest_revision("tokenizer/en").as_deref(),
          Some("20260821")
       );
       assert!(
-         store.newest_revision("nlp/tokenizer/de").is_none(),
+         store.newest_revision("tokenizer/de").is_none(),
          "assets never bleed into each other"
       );
 
-      let dir = store.revision_dir("nlp/tokenizer/en", "20260821");
+      let dir = store.revision_dir("tokenizer/en", "20260821");
       assert!(store.find_file(&dir, "meta.json").is_ok());
    }
 

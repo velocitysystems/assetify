@@ -4,8 +4,8 @@
 //!
 //! Local: `cargo lambda watch`, then
 //!        `cargo lambda invoke lambda-demo --data-file event.json`
-//! Deploy: `cargo lambda build --release && cargo lambda deploy`
-//!         (the `include = ["assets"]` metadata ships the fixtures)
+//! Deploy: copy the shared fixtures into the package (see README),
+//!         then `cargo lambda build --release && cargo lambda deploy`
 
 use std::io::Read as _;
 use std::path::PathBuf;
@@ -15,7 +15,8 @@ use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 
 /// Deployed, the bundled `assets/` directory sits in the function's
-/// task root next to the binary; locally, use the committed fixtures.
+/// task root next to the binary; locally, serve the shared fixture
+/// tree at `demos/assets` in place.
 fn assets_root() -> PathBuf {
    if let Ok(task_root) = std::env::var("LAMBDA_TASK_ROOT") {
       let bundled = PathBuf::from(task_root).join("assets");
@@ -23,39 +24,79 @@ fn assets_root() -> PathBuf {
          return bundled;
       }
    }
-   PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
+   PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets")
 }
 
 async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
    // Cache-only mode over a read-only root: the bundle is the cache.
    let engine = Assetify::builder(assets_root()).build()?;
    let request = AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       [
          ("meta.json", AccessKind::Stream),
          ("index.dat", AccessKind::Random),
+         ("vocab.txt", AccessKind::AssetPath),
       ],
    );
 
-   match engine.asset(request).await {
-      AssetResponse::Available { mut asset } => {
-         let mut stream = asset
-            .take_stream("meta.json")
-            .expect("requested as a stream");
-         let mut meta = String::new();
-         stream.read_to_string(&mut meta)?;
+   let mut asset = match engine.asset(request).await {
+      AssetResponse::Available { asset } => asset,
+      AssetResponse::Unavailable { reason } => return Ok(json!({ "unavailable": reason })),
+   };
 
-         let index = asset
-            .take_random("index.dat")
-            .expect("requested as random access");
-         Ok(json!({
-            "id": "nlp/tokenizer/en",
-            "revisionMeta": meta,
-            "indexBytes": index.len(),
-         }))
-      }
-      AssetResponse::Unavailable { reason } => Ok(json!({ "unavailable": reason })),
+   // Stream: one forward parse of the model card.
+   let mut stream = asset
+      .take_stream("meta.json")
+      .expect("requested as a stream");
+   let mut card = String::new();
+   stream.read_to_string(&mut card)?;
+   let meta: Value = serde_json::from_str(&card)?;
+   let language = meta["language"].as_str().unwrap_or("unknown").to_string();
+   let declared = meta["vocabSize"].as_u64().unwrap_or(0) as u32;
+
+   // AssetPath: read the vocabulary by real path, the way a tokenizer
+   // library opening its own files would.
+   let vocab_path = asset
+      .take_asset_path("vocab.txt")
+      .expect("requested as a path");
+   let vocab = std::fs::read_to_string(vocab_path.as_path())?;
+   let vocab_words = vocab.lines().count() as u32;
+
+   // Random: decode the index header, then look tokens up through it
+   // — a positioned read per entry, never a scan.
+   let index = asset
+      .take_random("index.dat")
+      .expect("requested as random access");
+   let mut header = [0u8; 8];
+   index.read_at_exact(0, &mut header)?;
+   if &header[0..4] != b"AIDX" {
+      return Err("index.dat: invalid header".into());
    }
+   let entries = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+   if entries == 0 {
+      return Err("index.dat: empty index".into());
+   }
+
+   let mut sample_tokens = Vec::new();
+   // Entries picked for recognizable words in this revision.
+   for entry in [320u32, 643, 810] {
+      let mut raw = [0u8; 4];
+      index.read_at_exact(8 + u64::from(entry) * 4, &mut raw)?;
+      let offset = u32::from_le_bytes(raw) as usize;
+      let token = vocab[offset..].lines().next().unwrap_or("").to_string();
+      sample_tokens.push(token);
+   }
+
+   let consistent =
+      vocab_words == declared && entries == declared && sample_tokens.iter().all(|t| !t.is_empty());
+   Ok(json!({
+      "id": "tokenizer/en",
+      "language": language,
+      "vocabWords": vocab_words,
+      "indexEntries": entries,
+      "sampleTokens": sample_tokens,
+      "consistent": consistent,
+   }))
 }
 
 #[tokio::main]

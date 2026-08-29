@@ -17,8 +17,14 @@ Expected output:
 
 ```json
 {
-  "id": "nlp/tokenizer/en",
-  "revisionMeta": "{\"format\":1,\"language\":\"en\"}",
-  "indexBytes": 21
+  "id": "tokenizer/en",
+  "language": "en",
+  "vocabWords": 1000,
+  "indexEntries": 1000,
+  "sampleTokens": ["falcon", "pyramid", "starfish"],
+  "consistent": true
 }
 ```
+
+The addon serves the shared fixture tree at `demos/assets` in place
+(cache-only mode over a read-only root); every file read happens in Rust.

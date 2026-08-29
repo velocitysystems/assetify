@@ -50,7 +50,7 @@ pub struct RejectedDelivery {
 #[derive(Clone, Debug)]
 pub struct AssetRequest {
    /// The asset's identifier, a `/`-separated logical name in the
-   /// consumer's own namespace (`"nlp/tokenizer/en"`). Identifiers
+   /// consumer's own namespace (`"tokenizer/en"`). Identifiers
    /// are validated before touching the filesystem: no `.` or `..`
    /// segments, no absolute paths, no empty segments, and segment
    /// characters limited to alphanumerics, `-`, `_`, and `.`.
@@ -58,7 +58,7 @@ pub struct AssetRequest {
    /// The id is the compatibility boundary: every revision under one
    /// id must be readable by every consumer that requests it. If your
    /// payload format can change incompatibly, encode the format in
-   /// the id (`"nlp/tokenizer/en/v2"`) so incompatible payloads are
+   /// the id (`"tokenizer/en/v2"`) so incompatible payloads are
    /// simply different assets.
    pub id: String,
    /// Every file the asset must contain, each with its required

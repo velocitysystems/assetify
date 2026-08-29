@@ -62,7 +62,7 @@ the asset's id:
 
 ```rust
 let engine = Assetify::builder("/var/cache/my-app/assets")
-   .resolver(StaticResolver::new([("nlp/tokenizer/en", source)]))
+   .resolver(StaticResolver::new([("tokenizer/en", source)]))
    .build()?;
 ```
 
@@ -71,7 +71,7 @@ let engine = Assetify::builder("/var/cache/my-app/assets")
 ```rust
 let outcome = engine
    .asset(AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       [("model.bin", AccessKind::Random)],
    ))
    .await;
@@ -85,14 +85,14 @@ match outcome {
 What the first run logs:
 
 ```text
- INFO staged    asset=nlp/tokenizer/en revision=20260821 file=model.bin
- INFO placed    asset=nlp/tokenizer/en revision=20260821
- INFO delivered asset=nlp/tokenizer/en revision=20260821 files=1
+ INFO staged    asset=tokenizer/en revision=20260821 file=model.bin
+ INFO placed    asset=tokenizer/en revision=20260821
+ INFO delivered asset=tokenizer/en revision=20260821 files=1
 ```
 
 Every later request — including every request made offline — skips straight to
 serving from disk: the revision is cached under
-`<root>/nlp/tokenizer/en/20260821/`.
+`<root>/tokenizer/en/20260821/`.
 
 ## Usage
 
@@ -174,7 +174,7 @@ struct DynamicResolver {
 #[async_trait::async_trait]
 impl Resolver for DynamicResolver {
    async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
-      // GET {base_url}/releases/nlp/tokenizer/en returns e.g.
+      // GET {base_url}/releases/tokenizer/en returns e.g.
       //   { "version": "20260821",
       //     "files": [ { "name": "model.bin", "sha256": "9f86d0…" } ] }
       let Some(release) = fetch_release(&self.base_url, id).await? else {
@@ -276,7 +276,7 @@ not a backing offers the zero-copy window:
 use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
 
 let provider = MemoryProvider::new(WindowMode::Declined)
-   .with_asset("nlp/tokenizer/en", MemoryAsset::new().with_file("model.bin", b"…".to_vec()));
+   .with_asset("tokenizer/en", MemoryAsset::new().with_file("model.bin", b"…".to_vec()));
 ```
 
 Run your loader under all three modes — `Offered`, `Declined`, `ShortReads` —
@@ -296,7 +296,7 @@ tracing_subscriber::fmt().init();
 ```
 <root>/
 ├── .staging/                  downloads assemble and verify here…
-└── nlp/tokenizer/en/          …then the whole set renames into place
+└── tokenizer/en/          …then the whole set renames into place
     ├── 20260812/              revisions: immutable, newest wins
     └── 20260821/model.bin
 ```
@@ -310,7 +310,7 @@ each requested file behind its declared access kind.
 Two properties fall out of the layout. The **id is the compatibility
 boundary** — fallback only ever picks among one asset's own revisions, so if
 your payload format can change incompatibly, encode it in the id
-(`nlp/tokenizer/en/v2`) and incompatible payloads are simply different
+(`tokenizer/en/v2`) and incompatible payloads are simply different
 assets. And placed revisions are **immutable** — new content is always a new
 directory — so memory maps are safe and concurrent writers (threads *or*
 processes) race harmlessly.

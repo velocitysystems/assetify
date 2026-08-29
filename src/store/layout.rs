@@ -85,7 +85,7 @@ mod tests {
 
    #[test]
    fn accepts_reasonable_names() {
-      for id in ["nlp/tokenizer/en", "models/sentiment", "a", "x2/y-z_1.0"] {
+      for id in ["tokenizer/en", "models/sentiment", "a", "x2/y-z_1.0"] {
          assert!(validate_id(id).is_ok(), "{id:?} should be valid");
       }
       for revision in ["20260821", "2026-08-21", "r1.2"] {
@@ -124,7 +124,7 @@ mod tests {
 
    #[test]
    fn asset_dir_nests_id_segments_under_the_root() {
-      let dir = asset_dir(std::path::Path::new("/cache"), "nlp/tokenizer/en");
-      assert_eq!(dir, PathBuf::from("/cache/nlp/tokenizer/en"));
+      let dir = asset_dir(std::path::Path::new("/cache"), "tokenizer/en");
+      assert_eq!(dir, PathBuf::from("/cache/tokenizer/en"));
    }
 }

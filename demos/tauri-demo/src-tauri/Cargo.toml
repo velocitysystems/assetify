@@ -13,6 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 assetify = { path = "../../.." }
 tauri = { version = "2.11.5", features = [] }
+serde_json = "1.0.151"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.23"
 

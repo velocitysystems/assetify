@@ -22,7 +22,7 @@ fn random_text(len: usize) -> String {
 fn requests() -> [AssetRequest; 2] {
    [
       AssetRequest::new(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          [
             ("meta.json", AccessKind::Stream),
             ("index.dat", AccessKind::Random),
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    // Pre-seed the tree, laid out as <root>/<id>/<revision>/.
    let root = tempfile::tempdir()?;
    seed(
-      &root.path().join("nlp/tokenizer/en/20260821"),
+      &root.path().join("tokenizer/en/20260821"),
       &[
          ("meta.json".into(), r#"{"format":1,"language":"en"}"#.into()),
          ("index.dat".into(), random_text(2048)),

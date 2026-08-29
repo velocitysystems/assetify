@@ -1,10 +1,10 @@
 # tauri-demo
 
-assetify inside a **headless** Tauri 2 app — no windows, no webview
-(`"windows": []`): assets load in the `setup` hook against the app's real
-cache directory (`app_cache_dir()`), exactly where a shipping app would warm
-them up. The `src-web/` stub only satisfies Tauri's frontend requirement;
-nothing renders.
+assetify inside a Tauri 2 app: the engine is built in the `setup` hook over
+the app's real cache directory (`app_cache_dir()`) and managed as state; the
+webview invokes one `#[tauri::command]` over IPC and renders the summary it
+gets back. Every asset read happens on the Rust side — only serializable
+results cross the bridge.
 
 ## Run on desktop
 
@@ -13,8 +13,12 @@ cd src-tauri
 cargo run
 ```
 
-Expected output: `delivered` from assetify's lifecycle events, then
-`assets loaded in the app shell`, and the app exits.
+A window opens showing the delivered summary (vocabulary size, index
+entries, sample tokens looked up through the binary index, and a
+`consistent` cross-check); the console logs `delivered` from assetify's
+lifecycle events. The shared fixture tree at `demos/assets` is compiled into
+the binary, so devices and simulators carry the assets with the app. Close
+the window to exit.
 
 ## Run on iOS simulator / Android emulator
 

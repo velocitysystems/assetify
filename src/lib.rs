@@ -57,12 +57,12 @@
 //! );
 //!
 //! let engine = Assetify::builder("/var/cache/my-app/assets")
-//!    .resolver(StaticResolver::new([("nlp/tokenizer/en", source)]))
+//!    .resolver(StaticResolver::new([("tokenizer/en", source)]))
 //!    .build()?;
 //!
 //! let outcome = engine
 //!    .asset(AssetRequest::new(
-//!       "nlp/tokenizer/en",
+//!       "tokenizer/en",
 //!       [("model.bin", AccessKind::Random)],
 //!    ))
 //!    .await;
@@ -81,7 +81,7 @@
 //! revision on disk for that id, so an offline device keeps working
 //! on what it has rather than refusing service over staleness. If
 //! your payload format can change incompatibly, encode the format in
-//! the id (`"nlp/tokenizer/en/v2"`): incompatible payloads are then
+//! the id (`"tokenizer/en/v2"`): incompatible payloads are then
 //! simply different assets, and old application builds keep
 //! requesting — and serving — the id they understand.
 //!

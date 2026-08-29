@@ -26,7 +26,7 @@ fn file_source(dir: &Path, name: &str, bytes: &[u8]) -> FileSource {
 
 fn tokenizer_request() -> AssetRequest {
    AssetRequest::new(
-      "nlp/tokenizer/en",
+      "tokenizer/en",
       vec![
          FileRequest::new("meta.json", AccessKind::Stream),
          FileRequest::new("index.dat", AccessKind::Random),
@@ -67,7 +67,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
 
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -98,7 +98,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
    assert!(
       cache
          .path()
-         .join("nlp/tokenizer/en/20260821/meta.json")
+         .join("tokenizer/en/20260821/meta.json")
          .is_file()
    );
 }
@@ -106,7 +106,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
 #[tokio::test]
 async fn cache_only_mode_serves_a_preseeded_root() {
    let cache = tempfile::tempdir().unwrap();
-   let revision = cache.path().join("nlp/tokenizer/en/20260812");
+   let revision = cache.path().join("tokenizer/en/20260812");
    std::fs::create_dir_all(&revision).unwrap();
    for (name, bytes) in [
       ("meta.json", br#"{"format":4}"#.as_slice()),
@@ -148,7 +148,7 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
    // First run online: populate the cache.
    let online = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -183,7 +183,7 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
 
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -202,7 +202,7 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
    // Poison survives a process restart (a fresh engine, same root).
    let restarted = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -212,7 +212,7 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
    // A newer revision from the resolver recovers the asset.
    let recovered = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -245,7 +245,7 @@ async fn concurrent_requests_for_one_asset_all_succeed() {
          .resolver(CountingResolver {
             calls: Arc::clone(&calls),
             inner: StaticResolver::new([(
-               "nlp/tokenizer/en",
+               "tokenizer/en",
                tokenizer_source(remote.path(), "20260821"),
             )]),
          })
@@ -272,7 +272,7 @@ async fn materialized_paths_stay_valid_after_the_delivery_is_dropped() {
 
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -326,7 +326,7 @@ async fn acquisition_is_all_or_nothing() {
 
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          AssetSource::new("20260821", vec![good, bad]),
       )]))
       .build()
@@ -335,7 +335,7 @@ async fn acquisition_is_all_or_nothing() {
    let reason = unwrap_unavailable(
       engine
          .asset(AssetRequest::new(
-            "nlp/tokenizer/en",
+            "tokenizer/en",
             vec![FileRequest::new("meta.json", AccessKind::Stream)],
          ))
          .await,
@@ -345,7 +345,7 @@ async fn acquisition_is_all_or_nothing() {
 
    // Nothing was placed — not even the file that verified — and
    // staging holds no leftovers.
-   assert!(!cache.path().join("nlp/tokenizer/en").exists());
+   assert!(!cache.path().join("tokenizer/en").exists());
    let staging = cache.path().join(".staging");
    assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
 }
@@ -434,7 +434,7 @@ async fn a_custom_fetcher_supplies_locator_bytes() {
    let url = "custom://releases/tokenizer/meta.json";
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
-         "nlp/tokenizer/en",
+         "tokenizer/en",
          AssetSource::new(
             "20260821",
             vec![FileSource::new(
@@ -453,7 +453,7 @@ async fn a_custom_fetcher_supplies_locator_bytes() {
    let mut asset = unwrap_available(
       engine
          .asset(AssetRequest::new(
-            "nlp/tokenizer/en",
+            "tokenizer/en",
             [("meta.json", AccessKind::Stream)],
          ))
          .await,
