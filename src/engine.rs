@@ -33,6 +33,7 @@ use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
+use crate::source::fetch::{Fetcher, HashingSink};
 use crate::source::{AssetSource, Locator, Resolver, local};
 use crate::store::{Store, layout};
 
@@ -49,8 +50,10 @@ type Slot = String;
 pub struct Assetify {
    store: Store,
    resolver: Option<Box<dyn Resolver>>,
-   #[cfg(feature = "http")]
-   http_client: reqwest::Client,
+   /// Retrieves `Locator::Url` bytes. Explicitly supplied via the
+   /// builder, defaulted to reqwest under the `reqwest` feature, or
+   /// absent (URL sources report unavailable).
+   fetcher: Option<Box<dyn Fetcher>>,
    /// One async mutex per slot: concurrent requests for the same
    /// asset coalesce instead of racing the acquisition. Followers
    /// re-check the cache after the leader finishes and hit it.
@@ -66,6 +69,7 @@ impl Assetify {
       AssetifyBuilder {
          root: cache_root.into(),
          resolver: None,
+         fetcher: None,
       }
    }
 
@@ -192,10 +196,10 @@ impl Assetify {
          layout::validate_file_name(&file.name)?;
          let destination = staged.path().join(&file.name);
          let computed = match &file.locator {
-            Locator::File { path } => local::fetch(path, &destination)
+            Locator::File(path) => local::copy(path, &destination)
                .await
                .map_err(|e| format!("cannot acquire {:?} from {path:?}: {e}", file.name))?,
-            Locator::HTTP { url } => self.fetch_http(url, &file.name, &destination).await?,
+            Locator::Url(url) => self.fetch_url(url, &file.name, &destination).await?,
          };
          if !file.digest.matches_sha256(&computed) {
             return Err(format!("digest mismatch for {:?}", file.name));
@@ -221,23 +225,31 @@ impl Assetify {
       Ok(())
    }
 
-   #[cfg(feature = "http")]
-   async fn fetch_http(
+   /// Retrieve one URL through the configured [`Fetcher`], hashing
+   /// the bytes as they land in staging — verification stays here,
+   /// on the engine's side of the seam.
+   async fn fetch_url(
       &self,
       url: &str,
       name: &str,
       destination: &Path,
    ) -> Result<[u8; 32], String> {
-      crate::source::http::fetch(&self.http_client, url, destination)
+      let Some(fetcher) = &self.fetcher else {
+         return Err(format!(
+            "cannot acquire {name:?} from {url:?}: no fetcher is configured — enable the \
+             `reqwest` feature, or supply one with Assetify::builder(..).fetcher(..)"
+         ));
+      };
+      let file = std::fs::File::create(destination)
+         .map_err(|e| format!("cannot create staging file: {e}"))?;
+      let mut sink = HashingSink::new(file);
+      fetcher
+         .fetch(url, &mut sink)
          .await
-         .map_err(|e| format!("cannot acquire {name:?}: {e}"))
-   }
-
-   #[cfg(not(feature = "http"))]
-   async fn fetch_http(&self, url: &str, name: &str, _: &Path) -> Result<[u8; 32], String> {
-      Err(format!(
-         "cannot acquire {name:?} from {url:?}: assetify was built without the `http` feature"
-      ))
+         .map_err(|e| format!("cannot acquire {name:?}: {e}"))?;
+      sink
+         .finish()
+         .map_err(|e| format!("cannot flush staging file: {e}"))
    }
 
    /// The newest serviceable on-disk revision, or the reason there is
@@ -328,6 +340,7 @@ fn open_backing(path: &Path, kind: AccessKind) -> std::io::Result<FileAccess> {
 pub struct AssetifyBuilder {
    root: PathBuf,
    resolver: Option<Box<dyn Resolver>>,
+   fetcher: Option<Box<dyn Fetcher>>,
 }
 
 impl AssetifyBuilder {
@@ -336,6 +349,16 @@ impl AssetifyBuilder {
    /// root.
    pub fn resolver(mut self, resolver: impl Resolver + 'static) -> Self {
       self.resolver = Some(Box::new(resolver));
+      self
+   }
+
+   /// How `Locator::Url` bytes are retrieved. Omit to use the
+   /// built-in reqwest fetcher (`reqwest` feature). Supply your own to
+   /// configure the client (user agent, proxies, auth) or to use a
+   /// different one entirely — verification always stays with the
+   /// engine.
+   pub fn fetcher(mut self, fetcher: impl Fetcher + 'static) -> Self {
+      self.fetcher = Some(Box::new(fetcher));
       self
    }
 
@@ -352,13 +375,22 @@ impl AssetifyBuilder {
             }
          })?;
       }
+      #[cfg(feature = "reqwest")]
+      let fetcher = match self.fetcher {
+         Some(fetcher) => Some(fetcher),
+         None => Some(Box::new(crate::source::reqwest::ReqwestFetcher::new(
+            reqwest::Client::builder()
+               .build()
+               .map_err(|source| AssetifyError::DefaultFetcher { source })?,
+         )) as Box<dyn Fetcher>),
+      };
+      #[cfg(not(feature = "reqwest"))]
+      let fetcher = self.fetcher;
+
       Ok(Assetify {
          store: Store::new(self.root),
          resolver: self.resolver,
-         #[cfg(feature = "http")]
-         http_client: reqwest::Client::builder()
-            .build()
-            .map_err(|source| AssetifyError::HTTPClient { source })?,
+         fetcher,
          flights: Mutex::new(HashMap::new()),
          last_served: Mutex::new(HashMap::new()),
       })

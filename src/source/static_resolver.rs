@@ -57,9 +57,7 @@ mod tests {
             "20260821",
             vec![FileSource::new(
                "meta.json",
-               Locator::File {
-                  path: "/somewhere/meta.json".into(),
-               },
+               Locator::File("/somewhere/meta.json".into()),
                digest,
             )],
          ),

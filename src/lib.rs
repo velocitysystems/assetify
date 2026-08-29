@@ -49,7 +49,7 @@
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
 //! let source = AssetSource::new(
 //!    "20260821",
-//!    vec![FileSource::http(
+//!    vec![FileSource::url(
 //!       "model.bin",
 //!       "https://assets.example.com/tokenizer/20260821/model.bin",
 //!       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -108,8 +108,6 @@
 //! [`WindowMode`](testing::WindowMode), so consumer code can prove it
 //! behaves identically whether or not a backing offers the window.
 
-#![allow(clippy::upper_case_acronyms)]
-
 pub mod access;
 mod contract;
 mod digest;
@@ -121,11 +119,14 @@ mod store;
 pub mod testing;
 
 pub use contract::{
-   AccessKind, AssetPath, AssetRequest, AssetResponse, FileAccess, FileSpec, PreparedAsset,
+   AccessKind, AssetPath, AssetRequest, AssetResponse, FileAccess, FileRequest, PreparedAsset,
    PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};
 pub use engine::{Assetify, AssetifyBuilder};
 pub use error::AssetifyError;
+pub use source::fetch::{FetchError, Fetcher};
+#[cfg(feature = "reqwest")]
+pub use source::reqwest::ReqwestFetcher;
 pub use source::static_resolver::StaticResolver;
 pub use source::{AssetSource, FileSource, Locator, ResolveError, Resolver};

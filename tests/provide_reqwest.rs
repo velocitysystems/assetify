@@ -3,12 +3,12 @@
 //! failures with and without an on-disk fallback, and download
 //! deduplication under concurrency.
 
-#![cfg(feature = "http")]
+#![cfg(feature = "reqwest")]
 
 use std::sync::Arc;
 
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, FileSpec,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileRequest, FileSource,
    Locator, StaticResolver,
 };
 use sha2::Digest as _;
@@ -27,9 +27,7 @@ fn http_source(server_uri: &str, revision: &str, files: &[(&str, &[u8])]) -> Ass
          .map(|(name, bytes)| {
             FileSource::new(
                *name,
-               Locator::HTTP {
-                  url: format!("{server_uri}/{revision}/{name}"),
-               },
+               Locator::Url(format!("{server_uri}/{revision}/{name}")),
                sha256_of(bytes),
             )
          })
@@ -53,8 +51,8 @@ fn request() -> AssetRequest {
    AssetRequest::new(
       "models/sentiment",
       vec![
-         FileSpec::new("model.bin", AccessKind::Random),
-         FileSpec::new("labels.txt", AccessKind::Stream),
+         FileRequest::new("model.bin", AccessKind::Random),
+         FileRequest::new("labels.txt", AccessKind::Stream),
       ],
    )
 }
@@ -173,7 +171,7 @@ async fn server_errors_fall_back_to_the_cached_revision() {
       engine
          .asset(AssetRequest::new(
             "models/other",
-            vec![FileSpec::new("model.bin", AccessKind::Random)],
+            vec![FileRequest::new("model.bin", AccessKind::Random)],
          ))
          .await,
    );

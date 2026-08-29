@@ -1,7 +1,7 @@
 //! Download, verify, cache, serve — multiple assets against a local
 //! mock server, so the example is self-contained.
 //!
-//! Run with: `cargo run --example http_assets --features http`
+//! Run with: `cargo run --example http_assets --features reqwest`
 
 use std::io::Read as _;
 
@@ -59,7 +59,7 @@ async fn publish(
          .mount(server)
          .await;
       sources.push(
-         FileSource::http(
+         FileSource::url(
             name.clone(),
             format!("{}/{id}/{revision}/{name}", server.uri()),
             &hex::encode(sha2::Sha256::digest(content.as_bytes())),

@@ -12,7 +12,7 @@ use sha2::{Digest as _, Sha256};
 
 /// Copy `source` to `destination`, returning the SHA-256 of the bytes
 /// copied. Runs the blocking IO on the runtime's blocking pool.
-pub(crate) async fn fetch(source: &Path, destination: &Path) -> io::Result<[u8; 32]> {
+pub(crate) async fn copy(source: &Path, destination: &Path) -> io::Result<[u8; 32]> {
    let source: PathBuf = source.to_path_buf();
    let destination: PathBuf = destination.to_path_buf();
    tokio::task::spawn_blocking(move || copy_and_hash(&source, &destination))
@@ -48,7 +48,7 @@ mod tests {
       let destination = dir.path().join("dest.bin");
       std::fs::write(&source, b"payload bytes").unwrap();
 
-      let computed = fetch(&source, &destination).await.unwrap();
+      let computed = copy(&source, &destination).await.unwrap();
       assert_eq!(std::fs::read(&destination).unwrap(), b"payload bytes");
 
       let expected: [u8; 32] = Sha256::digest(b"payload bytes").into();
@@ -60,6 +60,6 @@ mod tests {
       let dir = tempfile::tempdir().unwrap();
       let missing = dir.path().join("absent.bin");
       let destination = dir.path().join("dest.bin");
-      assert!(fetch(&missing, &destination).await.is_err());
+      assert!(copy(&missing, &destination).await.is_err());
    }
 }

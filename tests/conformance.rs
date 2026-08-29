@@ -9,7 +9,7 @@ use std::sync::Arc;
 use assetify::access::MemoryRandom;
 use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, FileAccess, FileSpec, Provider, RandomAccess,
+   AccessKind, AssetRequest, AssetResponse, FileAccess, FileRequest, Provider, RandomAccess,
 };
 
 const PAYLOAD: &[u8] = b"the quick brown fox jumps over the lazy dog";
@@ -74,9 +74,9 @@ fn fixture_request() -> AssetRequest {
    AssetRequest::new(
       "nlp/tokenizer/en",
       vec![
-         FileSpec::new("meta.json", AccessKind::Stream),
-         FileSpec::new("model.bin", AccessKind::Random),
-         FileSpec::new("index.dat", AccessKind::Random),
+         FileRequest::new("meta.json", AccessKind::Stream),
+         FileRequest::new("model.bin", AccessKind::Random),
+         FileRequest::new("index.dat", AccessKind::Random),
       ],
    )
 }
@@ -254,10 +254,10 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
    let requests = [
       AssetRequest::new(
          "nlp/tokenizer/en",
-         vec![FileSpec::new("missing.dat", AccessKind::Stream)],
+         vec![FileRequest::new("missing.dat", AccessKind::Stream)],
       ),
       fixture_request(),
-      AssetRequest::new("no/such/asset", Vec::<FileSpec>::new()),
+      AssetRequest::new("no/such/asset", Vec::<FileRequest>::new()),
    ];
    let outcomes = provider(WindowMode::Offered).provide(&requests).await;
    assert_eq!(outcomes.len(), 3, "one outcome per request, in order");
@@ -282,7 +282,7 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
 async fn memory_provider_declines_materialized_paths_with_guidance() {
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
-      vec![FileSpec::new("index.dat", AccessKind::AssetPath)],
+      vec![FileRequest::new("index.dat", AccessKind::AssetPath)],
    );
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;
    let AssetResponse::Unavailable { reason } = &outcomes[0] else {

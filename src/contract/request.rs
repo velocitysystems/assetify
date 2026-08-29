@@ -5,7 +5,7 @@ use crate::contract::access::AccessKind;
 /// One file the asset must contain, with the access the consumer
 /// requires for it.
 #[derive(Clone, Debug)]
-pub struct FileSpec {
+pub struct FileRequest {
    /// The file's name (`"index.dat"`). Delivery is matched by this
    /// name, never by position or path; names must be unique within an
    /// asset.
@@ -14,21 +14,21 @@ pub struct FileSpec {
    pub access: AccessKind,
 }
 
-impl FileSpec {
-   /// A spec for one named file.
+impl FileRequest {
+   /// A request for one named file.
    pub fn new(name: impl Into<String>, access: AccessKind) -> Self {
-      FileSpec {
+      FileRequest {
          name: name.into(),
          access,
       }
    }
 }
 
-impl<S: Into<String>> From<(S, AccessKind)> for FileSpec {
-   /// `("model.bin", AccessKind::Random)` reads as a spec directly —
-   /// the flat spelling request call sites use.
+impl<S: Into<String>> From<(S, AccessKind)> for FileRequest {
+   /// `("model.bin", AccessKind::Random)` reads as a file request
+   /// directly — the flat spelling request call sites use.
    fn from((name, access): (S, AccessKind)) -> Self {
-      FileSpec::new(name, access)
+      FileRequest::new(name, access)
    }
 }
 
@@ -63,7 +63,7 @@ pub struct AssetRequest {
    pub id: String,
    /// Every file the asset must contain, each with its required
    /// access kind.
-   pub files: Vec<FileSpec>,
+   pub files: Vec<FileRequest>,
    /// Present when the consumer rejected this asset's previous
    /// delivery at load. A provider holding a cached copy must treat
    /// it as poisoned.
@@ -72,9 +72,11 @@ pub struct AssetRequest {
 
 impl AssetRequest {
    /// A request for one asset, with no rejection echo. Files are
-   /// anything spec-shaped — `FileSpec` values or plain
-   /// `(name, AccessKind)` pairs.
-   pub fn new(id: impl Into<String>, files: impl IntoIterator<Item = impl Into<FileSpec>>) -> Self {
+   /// `FileRequest` values or plain `(name, AccessKind)` pairs.
+   pub fn new(
+      id: impl Into<String>,
+      files: impl IntoIterator<Item = impl Into<FileRequest>>,
+   ) -> Self {
       AssetRequest {
          id: id.into(),
          files: files.into_iter().map(Into::into).collect(),

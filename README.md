@@ -29,7 +29,7 @@ remote:
 
 ```toml
 [dependencies]
-assetify = { version = "0.1", features = ["http"] }
+assetify = { version = "0.1", features = ["reqwest"] }
 ```
 
 ## Quick start
@@ -46,7 +46,7 @@ its SHA-256:
 ```rust
 let source = AssetSource::new(
    "20260821", // revision: newest (lexicographically) wins
-   vec![FileSource::http(
+   vec![FileSource::url(
       "model.bin",
       "https://assets.example.com/tokenizer/20260821/model.bin",
       "…the file's sha-256, 64 hex chars…",
@@ -182,7 +182,7 @@ impl Resolver for DynamicResolver {
          .files
          .iter()
          .map(|f| {
-            FileSource::http(
+            FileSource::url(
                &f.name,
                format!("{}/releases/{id}/{}/{}", self.base_url, release.version, f.name),
                &f.sha256,
@@ -210,6 +210,28 @@ The three return values:
 
 Resolvers run on every request not already in flight — if resolution is
 expensive, cache your own lookups inside it.
+
+### Configuring the fetcher
+
+URL sources are retrieved through a `Fetcher`. Three rungs, each one step up
+in effort:
+
+```rust
+// 1. Nothing: the `reqwest` feature wires a default reqwest fetcher.
+
+// 2. Configure the client — user agent, timeouts, proxies — with
+//    reqwest's own builder, and hand it over:
+let client = reqwest::Client::builder().user_agent("my-app/1.4.0").build()?;
+let engine = Assetify::builder(root)
+   .resolver(resolver)
+   .fetcher(ReqwestFetcher::new(client))
+   .build()?;
+
+// 3. Bring your own client entirely: implement `Fetcher` (one async
+//    method that streams a URL's bytes into a sink). Auth headers,
+//    request signing, non-HTTP schemes — the URL is opaque to the
+//    engine, and verification always stays on the engine's side.
+```
 
 ### Cache-only mode
 
@@ -297,7 +319,7 @@ platform-specific setup:
 
 - **Desktop / mobile (e.g. Tauri)** — pass your app data directory as the
   cache root.
-- **AWS Lambda** — cache to `/tmp` with the `http` feature, or run cache-only
+- **AWS Lambda** — cache to `/tmp` with the `reqwest` feature, or run cache-only
   over assets bundled read-only into the deployment.
 - **Node.js (napi-rs)** — call it from `#[napi]` async functions; reads stay
   in Rust, only results cross the JS bridge.
@@ -325,14 +347,14 @@ platform-specific setup:
 | Feature | Default | Provides |
 |---|---|---|
 | `mmap` | ✓ | memory-mapped `Random` backing with the zero-copy window |
-| `http` | | downloading via `Locator::HTTP` (reqwest + rustls) |
+| `http` | | downloading via `Locator::Url` (reqwest + rustls) |
 | `test-util` | | `testing::MemoryProvider` for consumer tests |
 
 ## Examples
 
 ```sh
 cargo run --example local_assets
-cargo run --example http_assets --features http
+cargo run --example http_assets --features reqwest
 ```
 
 Both are self-contained (temp directories; the HTTP one runs its own mock

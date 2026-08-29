@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileSource,
-   FileSpec, Locator, RejectedDelivery, ResolveError, Resolver, StaticResolver,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileRequest,
+   FileSource, Locator, RejectedDelivery, ResolveError, Resolver, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -21,16 +21,16 @@ fn sha256_of(bytes: &[u8]) -> Digest {
 fn file_source(dir: &Path, name: &str, bytes: &[u8]) -> FileSource {
    let path = dir.join(name);
    std::fs::write(&path, bytes).unwrap();
-   FileSource::new(name, Locator::File { path }, sha256_of(bytes))
+   FileSource::new(name, Locator::File(path), sha256_of(bytes))
 }
 
 fn tokenizer_request() -> AssetRequest {
    AssetRequest::new(
       "nlp/tokenizer/en",
       vec![
-         FileSpec::new("meta.json", AccessKind::Stream),
-         FileSpec::new("index.dat", AccessKind::Random),
-         FileSpec::new("rules.txt", AccessKind::AssetPath),
+         FileRequest::new("meta.json", AccessKind::Stream),
+         FileRequest::new("index.dat", AccessKind::Random),
+         FileRequest::new("rules.txt", AccessKind::AssetPath),
       ],
    )
 }
@@ -123,7 +123,7 @@ async fn cache_only_mode_serves_a_preseeded_root() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            Vec::<FileSpec>::new(),
+            Vec::<FileRequest>::new(),
          ))
          .await,
    );
@@ -168,7 +168,7 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
       offline
          .asset(AssetRequest::new(
             "models/sentiment",
-            vec![FileSpec::new("model.bin", AccessKind::Random)],
+            vec![FileRequest::new("model.bin", AccessKind::Random)],
          ))
          .await,
    );
@@ -307,7 +307,7 @@ async fn duplicate_file_names_in_a_revision_are_a_delivery_error() {
       engine
          .asset(AssetRequest::new(
             "dicts/spellcheck-de",
-            vec![FileSpec::new("words.dat", AccessKind::Random)],
+            vec![FileRequest::new("words.dat", AccessKind::Random)],
          ))
          .await,
    );
@@ -336,7 +336,7 @@ async fn acquisition_is_all_or_nothing() {
       engine
          .asset(AssetRequest::new(
             "nlp/tokenizer/en",
-            vec![FileSpec::new("meta.json", AccessKind::Stream)],
+            vec![FileRequest::new("meta.json", AccessKind::Stream)],
          ))
          .await,
    );
@@ -350,7 +350,7 @@ async fn acquisition_is_all_or_nothing() {
    assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
 }
 
-#[cfg(not(feature = "http"))]
+#[cfg(not(feature = "reqwest"))]
 #[tokio::test]
 async fn http_sources_explain_the_missing_feature() {
    let cache = tempfile::tempdir().unwrap();
@@ -361,9 +361,7 @@ async fn http_sources_explain_the_missing_feature() {
             "r1",
             vec![FileSource::new(
                "model.bin",
-               Locator::HTTP {
-                  url: "https://example.invalid/model.bin".to_string(),
-               },
+               Locator::Url("https://example.invalid/model.bin".to_string()),
                sha256_of(b"weights"),
             )],
          ),
@@ -375,11 +373,11 @@ async fn http_sources_explain_the_missing_feature() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            vec![FileSpec::new("model.bin", AccessKind::Random)],
+            vec![FileRequest::new("model.bin", AccessKind::Random)],
          ))
          .await,
    );
-   assert!(reason.contains("`http` feature"), "{reason}");
+   assert!(reason.contains("`reqwest` feature"), "{reason}");
 }
 
 #[tokio::test]
@@ -389,7 +387,7 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new("../escape", Vec::<FileSpec>::new()))
+         .asset(AssetRequest::new("../escape", Vec::<FileRequest>::new()))
          .await,
    );
    assert!(reason.contains("invalid"), "{reason}");
@@ -398,9 +396,103 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            vec![FileSpec::new("../../etc/passwd", AccessKind::Stream)],
+            vec![FileRequest::new("../../etc/passwd", AccessKind::Stream)],
          ))
          .await,
    );
    assert!(reason.contains("invalid"), "{reason}");
+}
+
+/// A bring-your-own fetcher: serves bodies from a map, no HTTP stack
+/// at all — the locator's "url" is opaque to the engine.
+struct MapFetcher {
+   bodies: std::collections::HashMap<String, Vec<u8>>,
+}
+
+#[async_trait::async_trait]
+impl assetify::Fetcher for MapFetcher {
+   async fn fetch(
+      &self,
+      url: &str,
+      sink: &mut (dyn std::io::Write + Send),
+   ) -> Result<(), assetify::FetchError> {
+      let bytes = self
+         .bodies
+         .get(url)
+         .ok_or_else(|| assetify::FetchError::new(format!("no body for {url}")))?;
+      sink
+         .write_all(bytes)
+         .map_err(|e| assetify::FetchError::new(e.to_string()))
+   }
+}
+
+#[tokio::test]
+async fn a_custom_fetcher_supplies_locator_bytes() {
+   let cache = tempfile::tempdir().unwrap();
+
+   // A non-HTTP scheme: the engine never interprets the URL.
+   let url = "custom://releases/tokenizer/meta.json";
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "nlp/tokenizer/en",
+         AssetSource::new(
+            "20260821",
+            vec![FileSource::new(
+               "meta.json",
+               Locator::Url(url.to_string()),
+               sha256_of(b"{}"),
+            )],
+         ),
+      )]))
+      .fetcher(MapFetcher {
+         bodies: [(url.to_string(), b"{}".to_vec())].into(),
+      })
+      .build()
+      .unwrap();
+
+   let mut asset = unwrap_available(
+      engine
+         .asset(AssetRequest::new(
+            "nlp/tokenizer/en",
+            [("meta.json", AccessKind::Stream)],
+         ))
+         .await,
+   );
+   let mut meta = String::new();
+   asset
+      .take_stream("meta.json")
+      .unwrap()
+      .read_to_string(&mut meta)
+      .unwrap();
+   assert_eq!(meta, "{}");
+
+   // Verification stayed with the engine: a fetcher returning bytes
+   // that miss the digest places nothing.
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "models/other",
+         AssetSource::new(
+            "r1",
+            vec![FileSource::new(
+               "model.bin",
+               Locator::Url(url.to_string()),
+               sha256_of(b"the promised bytes"),
+            )],
+         ),
+      )]))
+      .fetcher(MapFetcher {
+         bodies: [(url.to_string(), b"tampered".to_vec())].into(),
+      })
+      .build()
+      .unwrap();
+   let reason = unwrap_unavailable(
+      engine
+         .asset(AssetRequest::new(
+            "models/other",
+            [("model.bin", AccessKind::Stream)],
+         ))
+         .await,
+   );
+   assert!(reason.contains("digest mismatch"), "{reason}");
+   assert!(!cache.path().join("models/other").exists());
 }

@@ -9,9 +9,10 @@
 //! is available as revision `r`, from these per-file locations, with
 //! these digests."
 
-#[cfg(feature = "http")]
-pub mod http;
+pub mod fetch;
 pub mod local;
+#[cfg(feature = "reqwest")]
+pub mod reqwest;
 pub mod static_resolver;
 
 use std::path::PathBuf;
@@ -22,25 +23,22 @@ use crate::digest::{Digest, InvalidDigest};
 
 /// Where one file's bytes can be acquired from.
 ///
-/// Non-exhaustive so acquisition methods can arrive without breakage
-/// — an authenticated-HTTP variant (custom headers) is the expected
-/// first addition; presigned URLs cover private object storage today.
+/// Non-exhaustive so acquisition methods can arrive without breakage.
+/// (Authentication needs no new variant: supply a
+/// [`Fetcher`](crate::Fetcher) that adds credentials.)
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum Locator {
-   /// Fetch over HTTP(S). Presigned object-storage URLs ride this
-   /// too. Requires the `http` feature.
-   HTTP {
-      /// The URL to GET.
-      url: String,
-   },
-   /// Copy from a file already on the local filesystem — bytes the
+   /// A URL, retrieved through the configured
+   /// [`Fetcher`](crate::Fetcher) — HTTP(S) via the built-in reqwest
+   /// fetcher (`reqwest` feature), or any scheme your own fetcher
+   /// understands; the URL is opaque to the engine. Presigned
+   /// object-storage URLs ride this too.
+   Url(String),
+   /// A file already on the local filesystem, copied in — bytes the
    /// application acquired through its own channel, or fixtures in
    /// tests. Verified exactly like a download.
-   File {
-      /// The file to copy in.
-      path: PathBuf,
-   },
+   File(PathBuf),
 }
 
 /// One file of an asset revision: its delivered name, where its bytes
@@ -65,17 +63,17 @@ impl FileSource {
       }
    }
 
-   /// A file fetched over HTTP(S), verified against a SHA-256 given
-   /// as 64 hex characters — the one-line spelling of the common
-   /// case.
-   pub fn http(
+   /// A file retrieved from a URL — HTTP(S) by default — verified
+   /// against a SHA-256 given as 64 hex characters. The one-line
+   /// spelling of the common case.
+   pub fn url(
       name: impl Into<String>,
       url: impl Into<String>,
       sha256_hex: &str,
    ) -> Result<Self, InvalidDigest> {
       Ok(FileSource::new(
          name,
-         Locator::HTTP { url: url.into() },
+         Locator::Url(url.into()),
          Digest::sha256_hex(sha256_hex)?,
       ))
    }
@@ -89,7 +87,7 @@ impl FileSource {
    ) -> Result<Self, InvalidDigest> {
       Ok(FileSource::new(
          name,
-         Locator::File { path: path.into() },
+         Locator::File(path.into()),
          Digest::sha256_hex(sha256_hex)?,
       ))
    }
@@ -162,12 +160,12 @@ mod tests {
 
    #[test]
    fn convenience_constructors_build_the_common_locators() {
-      let http = FileSource::http("model.bin", "https://example.com/m", EMPTY_SHA256).unwrap();
-      assert!(matches!(http.locator, Locator::HTTP { .. }));
+      let http = FileSource::url("model.bin", "https://example.com/m", EMPTY_SHA256).unwrap();
+      assert!(matches!(http.locator, Locator::Url(_)));
 
       let local = FileSource::local("model.bin", "/tmp/m", EMPTY_SHA256).unwrap();
-      assert!(matches!(local.locator, Locator::File { .. }));
+      assert!(matches!(local.locator, Locator::File(_)));
 
-      assert!(FileSource::http("model.bin", "u", "not-hex").is_err());
+      assert!(FileSource::url("model.bin", "u", "not-hex").is_err());
    }
 }
