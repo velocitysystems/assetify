@@ -20,8 +20,11 @@ tables, structured data.
 
 ## Installation
 
-```sh
-cargo add assetify
+Add the dependency to your `Cargo.toml`:
+
+```toml
+[dependencies]
+assetify = { git = "https://github.com/velocitysystems/assetify" }
 ```
 
 Downloading over HTTP(S) is feature-gated; enable it if your assets are
@@ -29,7 +32,7 @@ remote:
 
 ```toml
 [dependencies]
-assetify = { version = "0.1", features = ["reqwest"] }
+assetify = { git = "https://github.com/velocitysystems/assetify", features = ["reqwest"] }
 ```
 
 ## Quick start
@@ -347,7 +350,7 @@ platform-specific setup:
 | Feature | Default | Provides |
 |---|---|---|
 | `mmap` | ✓ | memory-mapped `Random` backing with the zero-copy window |
-| `http` | | downloading via `Locator::Url` (reqwest + rustls) |
+| `reqwest` | | downloading via `Locator::Url` (reqwest + rustls) |
 | `test-util` | | `testing::MemoryProvider` for consumer tests |
 
 ## Examples
