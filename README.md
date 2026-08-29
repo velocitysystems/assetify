@@ -2,32 +2,57 @@
 
 [![CI](https://github.com/velocitysystems/assetify/actions/workflows/ci.yml/badge.svg)](https://github.com/velocitysystems/assetify/actions/workflows/ci.yml)
 
-Declare your assets; assetify fetches, verifies, caches, and serves them — as a
-stream, random access, or a path, online or offline.
+Declare your assets; assetify fetches, verifies, caches, and serves them — as
+a stream, random access, or a path, online or offline. For crates and
+applications that embed data they don't ship: ML models, dictionaries, lookup
+tables, structured data.
 
-Assetify is for crates that embed data they don't ship: ML models, dictionaries,
-lookup tables, structured data. The consumer declares *what* it needs — which
-assets, which files, and how each file will be read — and assetify does the
-rest: download (or ingest from disk), SHA-256 verification, an atomically
-managed versioned cache, offline fallback, and the right backing per file
-(buffered stream, memory map, plain descriptor, or a real path).
+## Features
+
+- **Verified** — every file is SHA-256-checked before it reaches the cache
+- **Atomic** — a revision lands whole or not at all, and is never mutated
+- **Lane-versioned** — an upgraded app is never handed a payload it can't parse
+- **Offline-first** — acquisition failures fall back to the newest revision on disk
+- **Access by intent** — files arrive as streams, random access (mmap), or real paths
+- **Poisoning** — a payload that failed your load is never re-served
+- **Single-flight** — concurrent requests for one asset share one download
+- **Testable** — an in-memory provider runs your loading code without disk or network
+
+## Installation
+
+```sh
+cargo add assetify
+```
+
+Downloading over HTTP(S) is feature-gated; enable it if your assets are
+remote:
+
+```toml
+[dependencies]
+assetify = { version = "0.1", features = ["http"] }
+```
+
+## Quick start
+
+Point the builder at a cache directory, tell the built-in `StaticResolver`
+where each asset lives, and request what you need:
 
 ```rust
 use assetify::{
-   AccessKind, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec, Locator,
-   StaticResolver,
+   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec,
+   Locator, StaticResolver,
 };
 
-let engine = Assetify::builder(cache_dir)
+let engine = Assetify::builder("/var/cache/my-app/assets")
    .resolver(StaticResolver::new([(
-      "nlp/tokenizer/en",
-      1,
+      "nlp/tokenizer/en", // asset id: your namespace, /-separated
+      1,                  // format lane: the payload version your build reads
       AssetSource::new(
-         "20260821",
+         "20260821",      // revision: newest (lexicographically) wins
          vec![FileSource::new(
             "model.bin",
-            Locator::HTTP { url: model_url },
-            Digest::sha256_hex(model_sha256)?,
+            Locator::HTTP { url: "https://assets.example.com/tokenizer/20260821/model.bin".into() },
+            Digest::sha256_hex("…the file's sha-256, 64 hex chars…")?,
          )],
       ),
    )]))
@@ -40,43 +65,193 @@ let outcome = engine
       vec![FileSpec::new("model.bin", AccessKind::Random)],
    ))
    .await;
+
+match outcome {
+   AssetOutcome::Available { asset } => { /* read the files — see Usage */ }
+   AssetOutcome::Unavailable { reason } => eprintln!("degraded: {reason}"),
+}
 ```
 
-## Access kinds: say how you read, not how to store
+The first request downloads, verifies, and caches; every later request — and
+every request while offline — serves from disk.
 
-Each requested file names the shape it will be read in. First match wins:
+## Usage
+
+### Choosing an access kind
+
+Declare how you'll *read* each file; assetify picks the backing. First match
+wins:
 
 | You are… | Declare |
 |---|---|
-| loading through a library that takes a filesystem path | `MaterializedPath` |
-| seeking, reading byte ranges, or probing the file in place | `Random` |
-| anything else (one forward parse) | `Stream` |
+| Loading through a library that takes a filesystem path | `AccessKind::MaterializedPath` |
+| Seeking, reading byte ranges, or probing the file in place | `AccessKind::Random` |
+| Anything else (one forward parse) | `AccessKind::Stream` |
 
-The backing is assetify's choice — `Random` files arrive memory-mapped when the
-`mmap` feature is on (with an optional zero-copy `as_bytes()` window), and every
-consumer runs correctly on the `read_at` floor alone. Don't care? Declaring
-`MaterializedPath` for everything is legal and gives you plain paths.
+Don't care? `MaterializedPath` for everything is legal and gives you plain
+paths.
 
-## How it behaves
+### Reading delivered files
 
-- **Two-tier versioning.** A request names a hard `format_major` lane — the
-  payload format your build can read — and the cache lays out
-  `<root>/<id>/v<lane>/<revision>/`. Which revision serves is the resolver's
-  business; lanes are never crossed, so an app upgrade can't be handed a
-  payload it cannot parse.
-- **Offline-first.** If resolution or download fails, the newest verified
-  revision already on disk serves instead. A missing asset is a degraded
-  capability (`Unavailable` with a reason), never an error to handle.
-- **All-or-nothing, never partial.** Files stage under the cache root, every
-  digest is verified, and the complete set renames into place atomically.
-  Readers never observe a half-written revision, placed directories are never
-  mutated (what makes the memory maps sound), and concurrent writers — other
-  threads or other processes — race harmlessly.
-- **Poison memory.** A delivery that verified but failed *your* load is echoed
-  back (`rejected`), marked on disk, and never served again; the asset recovers
-  when the resolver names a newer revision.
-- **Single-flight.** Concurrent requests for one asset coalesce into one
-  download.
+Files come back by name, each behind the access object you declared:
+
+```rust
+use std::io::Read;
+use assetify::FileAccess;
+
+let mut asset = /* AssetOutcome::Available { asset } */;
+
+match asset.take_file("model.bin").unwrap().access {
+   FileAccess::Stream(mut stream) => {
+      let mut bytes = Vec::new();
+      stream.read_to_end(&mut bytes)?;
+   }
+   FileAccess::Random(random) => {
+      // Positioned reads from any thread…
+      let mut header = [0u8; 16];
+      random.read_at_exact(0, &mut header)?;
+      // …or the whole file zero-copy, when the backing offers it.
+      if let Some(bytes) = random.as_bytes() { /* mmap window */ }
+   }
+   FileAccess::Path(path) => {
+      some_library::load_from(&*path)?; // a real, stable file path
+   }
+}
+```
+
+### Custom sources
+
+`StaticResolver` covers sources fixed at build time. When sources change at
+runtime — your backend publishes new revisions, entitlements differ per user —
+implement `SourceResolver` yourself. A resolver answers one question: **where
+can this asset be acquired right now?** Given an id and lane, it returns the
+current revision and each file's URL and digest; assetify handles everything
+after that (download, verify, cache, serve).
+
+```rust
+use assetify::{AssetSource, Digest, FileSource, Locator, ResolveError, SourceResolver};
+
+/// Resolves against a manifest your app fetched from its own backend:
+/// each entry lists an asset's current revision and its files' URLs
+/// and SHA-256 digests.
+struct ManifestResolver {
+   manifest: Manifest,
+}
+
+#[async_trait::async_trait]
+impl SourceResolver for ManifestResolver {
+   async fn resolve(
+      &self,
+      id: &str,
+      format_major: u32,
+   ) -> Result<Option<AssetSource>, ResolveError> {
+      // Unknown asset: Ok(None) — assetify serves its cache, or
+      // reports the asset unavailable.
+      let Some(entry) = self.manifest.lookup(id, format_major) else {
+         return Ok(None);
+      };
+
+      let mut files = Vec::new();
+      for file in &entry.files {
+         files.push(FileSource::new(
+            file.name.clone(),
+            Locator::HTTP { url: file.url.clone() },
+            Digest::sha256_hex(&file.sha256).map_err(|e| ResolveError::new(e.to_string()))?,
+         ));
+      }
+      Ok(Some(AssetSource::new(entry.revision.clone(), files)))
+   }
+}
+```
+
+Return `Err(ResolveError)` when resolution fails *right now* (offline, backend
+down): assetify falls back to the newest revision already on disk. Resolvers
+run on every request not already in flight — if resolution is expensive, cache
+your own lookups inside it.
+
+### Cache-only mode
+
+Omit the resolver and assetify serves whatever the root already holds — the
+root may be read-only. This is the shape for assets bundled into an AWS Lambda
+deployment package or an app bundle:
+
+```rust
+let engine = Assetify::builder("/opt/bundled-assets").build()?;
+```
+
+Seed the tree in assetify's layout: `<root>/<id>/v<lane>/<revision>/<files>`.
+
+### Handling unavailability
+
+`Unavailable { reason }` is a degraded capability, not an error to branch on:
+keep running and request again later. If a delivery verified but failed *your*
+load (corrupt content, wrong schema), echo it back so the copy is never
+re-served:
+
+```rust
+use assetify::RejectedDelivery;
+
+let mut retry = request.clone();
+retry.rejected = Some(RejectedDelivery { reason: "schema check failed".into() });
+// The next provide poisons that revision and recovers via a newer one.
+```
+
+### Testing your consumer
+
+With the `test-util` feature, `MemoryProvider` serves files from heap buffers
+— no filesystem, no network. Its window modes prove your code works whether or
+not a backing offers the zero-copy window:
+
+```rust
+use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
+
+let provider = MemoryProvider::new(WindowMode::Declined)
+   .with_asset("nlp/tokenizer/en", MemoryAsset::new().with_file("model.bin", b"…".to_vec()));
+```
+
+### Logging
+
+Assetify emits structured `tracing` events (`staged`, `placed`, `delivered`,
+plus warnings for fallback and poison). Install any subscriber to see them:
+
+```rust
+tracing_subscriber::fmt().init();
+```
+
+## How it works
+
+```
+<root>/
+├── .staging/                  downloads assemble and verify here…
+└── nlp/tokenizer/en/          …then the whole set renames into place
+    └── v1/                    the lane: format compatibility (hard)
+        ├── 20260812/          revisions: freshness (soft, newest wins)
+        └── 20260821/model.bin
+```
+
+Per request: validate the id and file names (they become paths — traversal is
+rejected outright) → ask the resolver where bytes live → serve the named
+revision from cache if present, otherwise fetch every file into staging,
+verify every digest, and atomically rename the complete set into place → open
+each requested file behind its declared access kind.
+
+Two properties fall out of the layout. The **lane** (`format_major`) is never
+crossed, so the offline fallback only ever serves payloads your build can
+read. And placed revisions are **immutable** — new content is always a new
+directory — so memory maps are safe and concurrent writers (threads *or*
+processes) race harmlessly.
+
+## Where it runs
+
+Anywhere Rust does — assetify is a plain library on tokio, with no
+platform-specific setup:
+
+- **Desktop / mobile (e.g. Tauri)** — pass your app data directory as the
+  cache root.
+- **AWS Lambda** — cache to `/tmp` with the `http` feature, or run cache-only
+  over assets bundled read-only into the deployment.
+- **Node.js (napi-rs)** — call it from `#[napi]` async functions; reads stay
+  in Rust, only results cross the JS bridge.
 
 ## Feature flags
 
@@ -84,7 +259,7 @@ consumer runs correctly on the `read_at` floor alone. Don't care? Declaring
 |---|---|---|
 | `mmap` | ✓ | memory-mapped `Random` backing with the zero-copy window |
 | `http` | | downloading via `Locator::HTTP` (reqwest + rustls) |
-| `test-util` | | `testing::MemoryProvider` — test your loading code with no filesystem or network |
+| `test-util` | | `testing::MemoryProvider` for consumer tests |
 
 ## Examples
 
@@ -96,20 +271,6 @@ cargo run --example http_assets --features http
 Both are self-contained (temp directories; the HTTP one runs its own mock
 server) and log the engine's lifecycle: `staged` per verified file, `placed`
 for the committed revision, `delivered` for the served asset.
-
-## Where it runs
-
-- **Desktop / mobile (e.g. Tauri):** pass your app data directory as the cache
-  root; everything else is plain Rust.
-- **AWS Lambda:** point the cache root at `/tmp` and enable `http`
-  (`default-features = false, features = ["http"]`), or bundle assets into the
-  deployment package and serve them in place — a builder without a resolver
-  runs cache-only and accepts a read-only root.
-- **Node.js (napi-rs):** assetify is a plain library on tokio; call it from
-  `#[napi]` async functions. Reads stay on the Rust side — only your results
-  cross the JS bridge. Expose long-running analysis as *async* functions so
-  memory-map page faults never stall the event loop, and prefer an explicit
-  `dispose()` over relying on the JS GC to drop Rust resources.
 
 ## License
 
