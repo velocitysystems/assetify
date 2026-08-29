@@ -51,6 +51,10 @@
 
 pub mod access;
 mod contract;
+mod digest;
+mod engine;
+mod error;
+mod source;
 mod store;
 #[cfg(feature = "test-util")]
 pub mod testing;
@@ -59,3 +63,8 @@ pub use contract::{
    AccessKind, AssetOutcome, AssetRequest, FileAccess, FileSpec, MaterializedPath, PreparedAsset,
    PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
+pub use digest::{Digest, InvalidDigest};
+pub use engine::{Assetify, AssetifyBuilder};
+pub use error::AssetifyError;
+pub use source::static_resolver::StaticResolver;
+pub use source::{AssetSource, FileSource, Locator, ResolveError, SourceResolver};

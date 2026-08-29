@@ -10,10 +10,6 @@
 //! are placed atomically and never mutated; a revision the consumer
 //! could not load is poisoned and skipped thereafter.
 
-// Consumed by the `Assetify` orchestration in the next milestone;
-// nothing outside the store reaches in yet.
-#![allow(dead_code)]
-
 pub(crate) mod layout;
 pub(crate) mod place;
 pub(crate) mod poison;
@@ -41,10 +37,6 @@ impl Store {
          root,
          poison: PoisonLedger::new(),
       }
-   }
-
-   pub(crate) fn root(&self) -> &Path {
-      &self.root
    }
 
    /// `<root>/<id>/v<major>`. Callers validate `id` first.

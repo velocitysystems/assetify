@@ -24,14 +24,20 @@ use tempfile::TempDir;
 /// `.`).
 const STAGING: &str = ".staging";
 
+/// Create the root and its staging area. Called at build time when a
+/// resolver is configured: acquisition needs a writable root, and
+/// failing at build beats failing on the first request.
+pub(crate) fn ensure_staging(root: &Path) -> io::Result<()> {
+   std::fs::create_dir_all(root.join(STAGING))
+}
+
 /// A fresh, unique staging directory under the root's staging area.
 /// Dropped un-placed, it cleans itself up.
 pub(crate) fn stage(root: &Path) -> io::Result<TempDir> {
-   let staging_root = root.join(STAGING);
-   std::fs::create_dir_all(&staging_root)?;
+   ensure_staging(root)?;
    tempfile::Builder::new()
       .prefix("stage-")
-      .tempdir_in(staging_root)
+      .tempdir_in(root.join(STAGING))
 }
 
 /// What placement accomplished.
