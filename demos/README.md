@@ -7,7 +7,7 @@ these demos prove the *integrations*.
 
 | Demo | Proves | Run |
 | --- | --- | --- |
-| [`tao-demo`](tao-demo/) | assetify in a mobile-capable app shell (tao event loop, no UI) | `cargo run` |
+| [`tauri-demo`](tauri-demo/) | assetify in a headless Tauri app (no UI) — desktop, iOS, Android | `cargo run` / `npm run tauri -- ios dev` |
 | [`node-demo`](node-demo/) | assetify behind a napi-rs addon — reads stay in Rust, JS gets a summary | `npm install && npm run build && npm start` |
 | [`lambda-demo`](lambda-demo/) | assetify in AWS Lambda — cache-only over assets bundled in the package | `cargo lambda watch` + `cargo lambda invoke` |
 
