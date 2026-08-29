@@ -27,7 +27,6 @@ fn file_source(dir: &Path, name: &str, bytes: &[u8]) -> FileSource {
 fn tokenizer_request() -> AssetRequest {
    AssetRequest::new(
       "nlp/tokenizer/en",
-      4,
       vec![
          FileSpec::new("meta.json", AccessKind::Stream),
          FileSpec::new("index.dat", AccessKind::Random),
@@ -69,7 +68,6 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -100,7 +98,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
    assert!(
       cache
          .path()
-         .join("nlp/tokenizer/en/v4/20260821/meta.json")
+         .join("nlp/tokenizer/en/20260821/meta.json")
          .is_file()
    );
 }
@@ -108,7 +106,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
 #[tokio::test]
 async fn cache_only_mode_serves_a_preseeded_root() {
    let cache = tempfile::tempdir().unwrap();
-   let revision = cache.path().join("nlp/tokenizer/en/v4/20260812");
+   let revision = cache.path().join("nlp/tokenizer/en/20260812");
    std::fs::create_dir_all(&revision).unwrap();
    for (name, bytes) in [
       ("meta.json", br#"{"format":4}"#.as_slice()),
@@ -123,7 +121,10 @@ async fn cache_only_mode_serves_a_preseeded_root() {
 
    let missing = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new("models/sentiment", 1, vec![]))
+         .asset(AssetRequest::new(
+            "models/sentiment",
+            Vec::<FileSpec>::new(),
+         ))
          .await,
    );
    assert!(missing.contains("cache-only"), "{missing}");
@@ -134,7 +135,7 @@ struct OfflineResolver;
 
 #[async_trait::async_trait]
 impl SourceResolver for OfflineResolver {
-   async fn resolve(&self, _: &str, _: u32) -> Result<Option<AssetSource>, ResolveError> {
+   async fn resolve(&self, _: &str) -> Result<Option<AssetSource>, ResolveError> {
       Err(ResolveError::new("network unreachable"))
    }
 }
@@ -148,7 +149,6 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
    let online = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -168,7 +168,6 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
       offline
          .asset(AssetRequest::new(
             "models/sentiment",
-            1,
             vec![FileSpec::new("model.bin", AccessKind::Random)],
          ))
          .await,
@@ -185,7 +184,6 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -205,7 +203,6 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
    let restarted = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260812"),
       )]))
       .build()
@@ -216,7 +213,6 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
    let recovered = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -232,13 +228,9 @@ struct CountingResolver {
 
 #[async_trait::async_trait]
 impl SourceResolver for CountingResolver {
-   async fn resolve(
-      &self,
-      id: &str,
-      format_major: u32,
-   ) -> Result<Option<AssetSource>, ResolveError> {
+   async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
       self.calls.fetch_add(1, Ordering::SeqCst);
-      self.inner.resolve(id, format_major).await
+      self.inner.resolve(id).await
    }
 }
 
@@ -254,7 +246,6 @@ async fn concurrent_requests_for_one_asset_all_succeed() {
             calls: Arc::clone(&calls),
             inner: StaticResolver::new([(
                "nlp/tokenizer/en",
-               4,
                tokenizer_source(remote.path(), "20260821"),
             )]),
          })
@@ -282,7 +273,6 @@ async fn materialized_paths_stay_valid_after_the_delivery_is_dropped() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          tokenizer_source(remote.path(), "20260821"),
       )]))
       .build()
@@ -306,7 +296,7 @@ async fn materialized_paths_stay_valid_after_the_delivery_is_dropped() {
 #[tokio::test]
 async fn duplicate_file_names_in_a_revision_are_a_delivery_error() {
    let cache = tempfile::tempdir().unwrap();
-   let revision = cache.path().join("dicts/spellcheck-de/v2/r1");
+   let revision = cache.path().join("dicts/spellcheck-de/r1");
    std::fs::create_dir_all(revision.join("a")).unwrap();
    std::fs::create_dir_all(revision.join("b")).unwrap();
    std::fs::write(revision.join("a/words.dat"), b"one").unwrap();
@@ -317,7 +307,6 @@ async fn duplicate_file_names_in_a_revision_are_a_delivery_error() {
       engine
          .asset(AssetRequest::new(
             "dicts/spellcheck-de",
-            2,
             vec![FileSpec::new("words.dat", AccessKind::Random)],
          ))
          .await,
@@ -338,7 +327,6 @@ async fn acquisition_is_all_or_nothing() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          AssetSource::new("20260821", vec![good, bad]),
       )]))
       .build()
@@ -348,7 +336,6 @@ async fn acquisition_is_all_or_nothing() {
       engine
          .asset(AssetRequest::new(
             "nlp/tokenizer/en",
-            4,
             vec![FileSpec::new("meta.json", AccessKind::Stream)],
          ))
          .await,
@@ -370,7 +357,6 @@ async fn http_sources_explain_the_missing_feature() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "models/sentiment",
-         1,
          AssetSource::new(
             "r1",
             vec![FileSource::new(
@@ -389,7 +375,6 @@ async fn http_sources_explain_the_missing_feature() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            1,
             vec![FileSpec::new("model.bin", AccessKind::Random)],
          ))
          .await,
@@ -404,7 +389,7 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new("../escape", 1, vec![]))
+         .asset(AssetRequest::new("../escape", Vec::<FileSpec>::new()))
          .await,
    );
    assert!(reason.contains("invalid"), "{reason}");
@@ -413,7 +398,6 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            1,
             vec![FileSpec::new("../../etc/passwd", AccessKind::Stream)],
          ))
          .await,

@@ -11,7 +11,7 @@ tables, structured data.
 
 - **Verified** — every file is SHA-256-checked before it reaches the cache
 - **Atomic** — a revision lands whole or not at all, and is never mutated
-- **Lane-versioned** — an upgraded app is never handed a payload it can't parse
+- **Versioned** — revisions are immutable; the newest one an asset holds wins
 - **Offline-first** — acquisition failures fall back to the newest revision on disk
 - **Access by intent** — files arrive as streams, random access (mmap), or real paths
 - **Poisoning** — a payload that failed your load is never re-served
@@ -36,8 +36,7 @@ assetify = { version = "0.1", features = ["http"] }
 
 ```rust
 use assetify::{
-   AccessKind, AssetResponse, AssetRequest, AssetSource, Assetify, FileSource, FileSpec,
-   StaticResolver,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, StaticResolver,
 };
 ```
 
@@ -56,11 +55,11 @@ let source = AssetSource::new(
 ```
 
 **2. Build an engine** over a cache directory, registering the source under
-the asset's id and format lane:
+the asset's id:
 
 ```rust
 let engine = Assetify::builder("/var/cache/my-app/assets")
-   .resolver(StaticResolver::new([("nlp/tokenizer/en", 1, source)]))
+   .resolver(StaticResolver::new([("nlp/tokenizer/en", source)]))
    .build()?;
 ```
 
@@ -70,8 +69,7 @@ let engine = Assetify::builder("/var/cache/my-app/assets")
 let outcome = engine
    .asset(AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
-      vec![FileSpec::new("model.bin", AccessKind::Random)],
+      [("model.bin", AccessKind::Random)],
    ))
    .await;
 
@@ -85,13 +83,13 @@ What the first run logs:
 
 ```text
  INFO staged    asset=nlp/tokenizer/en revision=20260821 file=model.bin
- INFO placed    asset=nlp/tokenizer/en lane=1 revision=20260821
- INFO delivered asset=nlp/tokenizer/en lane=1 revision=20260821 files=1
+ INFO placed    asset=nlp/tokenizer/en revision=20260821
+ INFO delivered asset=nlp/tokenizer/en revision=20260821 files=1
 ```
 
 Every later request — including every request made offline — skips straight to
 serving from disk: the revision is cached under
-`<root>/nlp/tokenizer/en/v1/20260821/`.
+`<root>/nlp/tokenizer/en/20260821/`.
 
 ## Usage
 
@@ -158,12 +156,8 @@ struct ManifestResolver {
 
 #[async_trait::async_trait]
 impl SourceResolver for ManifestResolver {
-   async fn resolve(
-      &self,
-      id: &str,
-      format_major: u32,
-   ) -> Result<Option<AssetSource>, ResolveError> {
-      let Some(entry) = self.manifest.lookup(id, format_major) else {
+   async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
+      let Some(entry) = self.manifest.lookup(id) else {
          return Ok(None);
       };
       let files = entry
@@ -199,7 +193,7 @@ deployment package or an app bundle:
 let engine = Assetify::builder("/opt/bundled-assets").build()?;
 ```
 
-Seed the tree in assetify's layout: `<root>/<id>/v<lane>/<revision>/<files>`.
+Seed the tree in assetify's layout: `<root>/<id>/<revision>/<files>`.
 
 ### Handling unavailability
 
@@ -250,9 +244,8 @@ tracing_subscriber::fmt().init();
 <root>/
 ├── .staging/                  downloads assemble and verify here…
 └── nlp/tokenizer/en/          …then the whole set renames into place
-    └── v1/                    the lane: format compatibility (hard)
-        ├── 20260812/          revisions: freshness (soft, newest wins)
-        └── 20260821/model.bin
+    ├── 20260812/              revisions: immutable, newest wins
+    └── 20260821/model.bin
 ```
 
 Per request: validate the id and file names (they become paths — traversal is
@@ -261,9 +254,11 @@ revision from cache if present, otherwise fetch every file into staging,
 verify every digest, and atomically rename the complete set into place → open
 each requested file behind its declared access kind.
 
-Two properties fall out of the layout. The **lane** (`format_major`) is never
-crossed, so the offline fallback only ever serves payloads your build can
-read. And placed revisions are **immutable** — new content is always a new
+Two properties fall out of the layout. The **id is the compatibility
+boundary** — fallback only ever picks among one asset's own revisions, so if
+your payload format can change incompatibly, encode it in the id
+(`nlp/tokenizer/en/v2`) and incompatible payloads are simply different
+assets. And placed revisions are **immutable** — new content is always a new
 directory — so memory maps are safe and concurrent writers (threads *or*
 processes) race harmlessly.
 

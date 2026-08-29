@@ -1,6 +1,6 @@
 //! Path math and name validation for the on-disk store.
 //!
-//! Layout: `<root>/<id>/v<format_major>/<revision>/…`, with staging
+//! Layout: `<root>/<id>/<revision>/…`, with staging
 //! under `<root>/.staging/`. Asset ids, revisions, and file names are
 //! consumer- and resolver-supplied strings used directly in
 //! filesystem paths, so they are validated before any path is built:
@@ -63,21 +63,19 @@ pub(crate) fn validate_file_name(name: &str) -> Result<(), String> {
 }
 
 /// Whether a directory entry name is a well-formed revision. Used
-/// when scanning a lane, so foreign entries (including dot-files)
-/// are ignored rather than served.
+/// when scanning an asset's directory, so foreign entries (including
+/// dot-files) are ignored rather than served.
 pub(crate) fn is_revision_name(name: &str) -> bool {
    valid_segment(name)
 }
 
-/// `<root>/<id>/v<format_major>` — the lane holding an asset's
-/// revisions readable by builds of that format major. Callers
-/// validate `id` first.
-pub(crate) fn lane_dir(root: &std::path::Path, id: &str, format_major: u32) -> PathBuf {
+/// `<root>/<id>` — the directory holding an asset's revisions.
+/// Callers validate `id` first.
+pub(crate) fn asset_dir(root: &std::path::Path, id: &str) -> PathBuf {
    let mut dir = root.to_path_buf();
    for segment in id.split('/') {
       dir.push(segment);
    }
-   dir.push(format!("v{format_major}"));
    dir
 }
 
@@ -125,8 +123,8 @@ mod tests {
    }
 
    #[test]
-   fn lane_dir_nests_id_segments_under_the_root() {
-      let dir = lane_dir(std::path::Path::new("/cache"), "nlp/tokenizer/en", 4);
-      assert_eq!(dir, PathBuf::from("/cache/nlp/tokenizer/en/v4"));
+   fn asset_dir_nests_id_segments_under_the_root() {
+      let dir = asset_dir(std::path::Path::new("/cache"), "nlp/tokenizer/en");
+      assert_eq!(dir, PathBuf::from("/cache/nlp/tokenizer/en"));
    }
 }

@@ -1,4 +1,4 @@
-//! Revision resolution within a lane, and name-matched file lookup
+//! Revision resolution within an asset.s directory, and name-matched file lookup
 //! within a revision.
 
 use std::path::{Path, PathBuf};
@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 use crate::store::layout;
 use crate::store::poison::PoisonLedger;
 
-/// The newest revision in a lane that is not poisoned, by
+/// The newest unpoisoned revision in an asset.s directory, by
 /// lexicographic order of the directory names (`YYYYMMDD`-style names
 /// sort correctly by construction). Foreign entries — files, dot
 /// directories, anything that is not a well-formed revision name —
 /// are ignored rather than served.
-pub(crate) fn newest_unpoisoned(lane_dir: &Path, ledger: &PoisonLedger) -> Option<String> {
+pub(crate) fn newest_unpoisoned(asset_dir: &Path, ledger: &PoisonLedger) -> Option<String> {
    let mut newest: Option<String> = None;
-   for entry in std::fs::read_dir(lane_dir).ok()? {
+   for entry in std::fs::read_dir(asset_dir).ok()? {
       let Ok(entry) = entry else { continue };
       if !entry.path().is_dir() {
          continue;
@@ -79,40 +79,37 @@ mod tests {
    #[test]
    fn newest_wins_lexicographically_and_poison_is_skipped() {
       let dir = tempfile::tempdir().unwrap();
-      let lane = dir.path();
+      let asset = dir.path();
       for revision in ["20260812", "20260821", "20250101"] {
-         std::fs::create_dir(lane.join(revision)).unwrap();
+         std::fs::create_dir(asset.join(revision)).unwrap();
       }
       // Foreign entries a real cache accumulates.
-      std::fs::write(lane.join("notes.txt"), b"not a revision").unwrap();
-      std::fs::create_dir(lane.join(".partial")).unwrap();
+      std::fs::write(asset.join("notes.txt"), b"not a revision").unwrap();
+      std::fs::create_dir(asset.join(".partial")).unwrap();
 
       let ledger = PoisonLedger::new();
       assert_eq!(
-         newest_unpoisoned(lane, &ledger).as_deref(),
+         newest_unpoisoned(asset, &ledger).as_deref(),
          Some("20260821")
       );
 
-      ledger.poison(&lane.join("20260821"), "unloadable");
+      ledger.poison(&asset.join("20260821"), "unloadable");
       assert_eq!(
-         newest_unpoisoned(lane, &ledger).as_deref(),
+         newest_unpoisoned(asset, &ledger).as_deref(),
          Some("20260812"),
          "poisoned newest falls back to the next revision"
       );
 
-      ledger.poison(&lane.join("20260812"), "unloadable");
-      ledger.poison(&lane.join("20250101"), "unloadable");
-      assert_eq!(newest_unpoisoned(lane, &ledger), None);
+      ledger.poison(&asset.join("20260812"), "unloadable");
+      ledger.poison(&asset.join("20250101"), "unloadable");
+      assert_eq!(newest_unpoisoned(asset, &ledger), None);
    }
 
    #[test]
-   fn missing_lane_resolves_to_none() {
+   fn missing_asset_dir_resolves_to_none() {
       let dir = tempfile::tempdir().unwrap();
       let ledger = PoisonLedger::new();
-      assert_eq!(
-         newest_unpoisoned(&dir.path().join("absent/v1"), &ledger),
-         None
-      );
+      assert_eq!(newest_unpoisoned(&dir.path().join("absent"), &ledger), None);
    }
 
    #[test]

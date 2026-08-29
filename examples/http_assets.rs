@@ -7,7 +7,7 @@ use std::io::Read as _;
 
 use assetify::{
    AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileAccess, FileSource,
-   FileSpec, Provider as _, StaticResolver,
+   Provider as _, StaticResolver,
 };
 use rand::distr::{Alphanumeric, SampleString};
 use sha2::Digest as _;
@@ -25,19 +25,17 @@ fn requests() -> [AssetRequest; 2] {
    [
       AssetRequest::new(
          "nlp/tokenizer/en",
-         1,
-         vec![
-            FileSpec::new("meta.json", AccessKind::Stream),
-            FileSpec::new("index.dat", AccessKind::Random),
-            FileSpec::new("rules.txt", AccessKind::AssetPath),
+         [
+            ("meta.json", AccessKind::Stream),
+            ("index.dat", AccessKind::Random),
+            ("rules.txt", AccessKind::AssetPath),
          ],
       ),
       AssetRequest::new(
          "models/classifier/en",
-         1,
-         vec![
-            FileSpec::new("model.bin", AccessKind::Random),
-            FileSpec::new("labels.txt", AccessKind::Stream),
+         [
+            ("model.bin", AccessKind::Random),
+            ("labels.txt", AccessKind::Stream),
          ],
       ),
    ]
@@ -108,8 +106,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    let cache = tempfile::tempdir()?;
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([
-         ("nlp/tokenizer/en", 1, tokenizer),
-         ("models/classifier/en", 1, classifier),
+         ("nlp/tokenizer/en", tokenizer),
+         ("models/classifier/en", classifier),
       ]))
       .build()?;
 
@@ -150,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    }
 
    // Offline: the server is gone, yet everything still serves — both
-   // verified revisions are cached under <root>/<id>/v<lane>/<rev>/.
+   // verified revisions are cached under <root>/<id>/<rev>/.
    drop(server);
    for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
       let AssetResponse::Available { asset } = outcome else {

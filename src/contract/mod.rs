@@ -4,9 +4,7 @@
 //! The consumer **declares** (which assets, which files, what access);
 //! the provider **prepares** (acquire, verify, place, choose
 //! backings). No storage path and no revision choice crosses the
-//! seam: versioning splits into a hard format lane the consumer
-//! states per request and a soft revision that stays wholly the
-//! provider's business.
+//! seam: which revision serves is wholly the provider's business.
 
 pub mod access;
 pub mod delivery;

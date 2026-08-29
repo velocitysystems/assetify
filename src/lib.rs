@@ -43,7 +43,7 @@
 //!
 //! ```no_run
 //! use assetify::{
-//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, FileSpec, StaticResolver,
+//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, StaticResolver,
 //! };
 //!
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,14 +57,13 @@
 //! );
 //!
 //! let engine = Assetify::builder("/var/cache/my-app/assets")
-//!    .resolver(StaticResolver::new([("nlp/tokenizer/en", 1, source)]))
+//!    .resolver(StaticResolver::new([("nlp/tokenizer/en", source)]))
 //!    .build()?;
 //!
 //! let outcome = engine
 //!    .asset(AssetRequest::new(
 //!       "nlp/tokenizer/en",
-//!       1,
-//!       vec![FileSpec::new("model.bin", AccessKind::Random)],
+//!       [("model.bin", AccessKind::Random)],
 //!    ))
 //!    .await;
 //! # Ok(())
@@ -75,17 +74,16 @@
 //! the root already holds (a read-only root is fine — assets bundled
 //! into a deployment are served in place).
 //!
-//! # Versioning: one hard axis, one soft
+//! # Versioning: the id is the compatibility boundary
 //!
-//! A request names a `format_major` — the payload format lane this
-//! consumer build can read. That axis is hard: lanes are never
-//! crossed, so an upgraded application is never handed a payload it
-//! cannot parse, and the cache keys revisions inside their lane
-//! (`<root>/<id>/v<lane>/<revision>/`). Which *revision* serves is
-//! soft and wholly the provider's: prefer what the resolver names,
-//! fall back to the newest verified revision on disk when
-//! acquisition fails — an offline device keeps working on what it
-//! has rather than refusing service over staleness.
+//! Every revision under one id must stay readable by the consumers
+//! that request it — offline fallback picks the newest verified
+//! revision on disk for that id, so an offline device keeps working
+//! on what it has rather than refusing service over staleness. If
+//! your payload format can change incompatibly, encode the format in
+//! the id (`"nlp/tokenizer/en/v2"`): incompatible payloads are then
+//! simply different assets, and old application builds keep
+//! requesting — and serving — the id they understand.
 //!
 //! # Embedding
 //!

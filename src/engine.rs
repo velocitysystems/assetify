@@ -1,6 +1,6 @@
 //! The engine: assetify's own [`Provider`] implementation.
 //!
-//! Per requested asset, single-flighted per `(id, format_major)`:
+//! Per requested asset, single-flighted per id:
 //!
 //! 1. **Validate** the id and file names — they become filesystem
 //!    paths, so traversal and reserved shapes are rejected before any
@@ -36,8 +36,8 @@ use crate::error::AssetifyError;
 use crate::source::{AssetSource, Locator, SourceResolver, local};
 use crate::store::{Store, layout};
 
-/// Key of one acquisition flight: an asset within a lane.
-type Slot = (String, u32);
+/// Key of one acquisition flight: one asset id.
+type Slot = String;
 
 /// The engine: a cache root, an optional resolver, and the
 /// [`Provider`] implementation over them.
@@ -92,7 +92,7 @@ impl Assetify {
          layout::validate_file_name(&spec.name)?;
       }
 
-      let slot = (request.id.clone(), request.format_major);
+      let slot = request.id.clone();
       if let Some(rejected) = &request.rejected {
          self.poison_last_served(&slot, &rejected.reason);
       }
@@ -102,9 +102,7 @@ impl Assetify {
       let flight = self.flight(&slot);
       let revision = {
          let _leader = flight.lock().await;
-         self
-            .ensure_revision(&request.id, request.format_major)
-            .await?
+         self.ensure_revision(&request.id).await?
       };
 
       // Recover from a poisoned lock: the maps hold plain
@@ -115,13 +113,10 @@ impl Assetify {
          .unwrap_or_else(PoisonError::into_inner)
          .insert(slot, revision.clone());
 
-      let revision_dir = self
-         .store
-         .revision_dir(&request.id, request.format_major, &revision);
+      let revision_dir = self.store.revision_dir(&request.id, &revision);
       let asset = self.serve(request, &revision_dir)?;
       tracing::info!(
          asset = %request.id,
-         lane = request.format_major,
          revision = %revision,
          files = asset.files.len(),
          "delivered"
@@ -132,47 +127,38 @@ impl Assetify {
    /// The revision this request will be served from — the resolver's
    /// choice when present (fetching it if need be), else the newest
    /// serviceable revision on disk.
-   async fn ensure_revision(&self, id: &str, format_major: u32) -> Result<String, String> {
+   async fn ensure_revision(&self, id: &str) -> Result<String, String> {
       let Some(resolver) = &self.resolver else {
-         return self.store.newest_revision(id, format_major).ok_or_else(|| {
-            format!("cache-only mode, and lane v{format_major} of {id:?} holds nothing servable")
-         });
+         return self
+            .store
+            .newest_revision(id)
+            .ok_or_else(|| format!("cache-only mode, and {id:?} holds nothing servable"));
       };
 
-      let source = match resolver.resolve(id, format_major).await {
+      let source = match resolver.resolve(id).await {
          Ok(Some(source)) => source,
          Ok(None) => {
-            return self.fallback(
-               id,
-               format_major,
-               "the resolver knows no source for this asset",
-            );
+            return self.fallback(id, "the resolver knows no source for this asset");
          }
-         Err(e) => return self.fallback(id, format_major, &format!("resolution failed: {e}")),
+         Err(e) => return self.fallback(id, &format!("resolution failed: {e}")),
       };
 
       if let Err(reason) = layout::validate_revision(&source.revision) {
-         return self.fallback(id, format_major, &reason);
+         return self.fallback(id, &reason);
       }
-      if self.store.has_revision(id, format_major, &source.revision) {
+      if self.store.has_revision(id, &source.revision) {
          tracing::debug!(
             asset = %id,
-            lane = format_major,
             revision = %source.revision,
             "cache hit"
          );
          return Ok(source.revision);
       }
-      if self
-         .store
-         .revision_dir(id, format_major, &source.revision)
-         .exists()
-      {
+      if self.store.revision_dir(id, &source.revision).exists() {
          // Present but poisoned: the same revision would carry the
          // same bytes, so re-fetching it cannot help.
          return self.fallback(
             id,
-            format_major,
             &format!(
                "revision {:?} was rejected by a previous load",
                source.revision
@@ -180,21 +166,16 @@ impl Assetify {
          );
       }
 
-      match self.acquire(id, format_major, &source).await {
+      match self.acquire(id, &source).await {
          Ok(()) => Ok(source.revision),
-         Err(reason) => self.fallback(id, format_major, &format!("acquisition failed: {reason}")),
+         Err(reason) => self.fallback(id, &format!("acquisition failed: {reason}")),
       }
    }
 
    /// Fetch every file of `source` into staging, verify every digest,
    /// and place the set atomically. All-or-nothing: any failure
    /// leaves the cache untouched.
-   async fn acquire(
-      &self,
-      id: &str,
-      format_major: u32,
-      source: &AssetSource,
-   ) -> Result<(), String> {
+   async fn acquire(&self, id: &str, source: &AssetSource) -> Result<(), String> {
       if source.files.is_empty() {
          return Err(format!(
             "source for revision {:?} lists no files",
@@ -229,12 +210,11 @@ impl Assetify {
 
       self
          .store
-         .place_revision(staged, id, format_major, &source.revision)
+         .place_revision(staged, id, &source.revision)
          .map(|_| ()) // AlreadyPresent: a racing writer won; same result.
          .map_err(|e| format!("cannot place revision {:?}: {e}", source.revision))?;
       tracing::info!(
          asset = %id,
-         lane = format_major,
          revision = %source.revision,
          "placed"
       );
@@ -262,21 +242,18 @@ impl Assetify {
 
    /// The newest serviceable on-disk revision, or the reason there is
    /// nothing to serve.
-   fn fallback(&self, id: &str, format_major: u32, reason: &str) -> Result<String, String> {
-      match self.store.newest_revision(id, format_major) {
+   fn fallback(&self, id: &str, reason: &str) -> Result<String, String> {
+      match self.store.newest_revision(id) {
          Some(revision) => {
             tracing::warn!(
                asset = %id,
-               lane = format_major,
                revision = %revision,
                %reason,
                "serving newest on-disk revision"
             );
             Ok(revision)
          }
-         None => Err(format!(
-            "{reason}; nothing servable on disk in lane v{format_major} of {id:?}"
-         )),
+         None => Err(format!("{reason}; nothing servable on disk for {id:?}")),
       }
    }
 
@@ -304,25 +281,22 @@ impl Assetify {
       )
    }
 
-   fn poison_last_served(&self, slot: &Slot, reason: &str) {
+   fn poison_last_served(&self, slot: &str, reason: &str) {
       let revision = self
          .last_served
          .lock()
          .unwrap_or_else(PoisonError::into_inner)
          .get(slot)
          .cloned()
-         .or_else(|| self.store.newest_revision(&slot.0, slot.1));
+         .or_else(|| self.store.newest_revision(slot));
       if let Some(revision) = revision {
          tracing::warn!(
-               asset = %slot.0,
-            lane = slot.1,
+               asset = %slot,
             revision = %revision,
             %reason,
             "poisoned rejected revision"
          );
-         self
-            .store
-            .poison_revision(&slot.0, slot.1, &revision, reason);
+         self.store.poison_revision(slot, &revision, reason);
       }
    }
 }

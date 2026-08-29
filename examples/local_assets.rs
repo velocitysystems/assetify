@@ -7,9 +7,7 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use assetify::{
-   AccessKind, AssetRequest, AssetResponse, Assetify, FileAccess, FileSpec, Provider as _,
-};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, FileAccess, Provider as _};
 use rand::distr::{Alphanumeric, SampleString};
 
 // The fixtures — shared verbatim with the http_assets example: two
@@ -25,19 +23,17 @@ fn requests() -> [AssetRequest; 2] {
    [
       AssetRequest::new(
          "nlp/tokenizer/en",
-         1,
-         vec![
-            FileSpec::new("meta.json", AccessKind::Stream),
-            FileSpec::new("index.dat", AccessKind::Random),
-            FileSpec::new("rules.txt", AccessKind::AssetPath),
+         [
+            ("meta.json", AccessKind::Stream),
+            ("index.dat", AccessKind::Random),
+            ("rules.txt", AccessKind::AssetPath),
          ],
       ),
       AssetRequest::new(
          "models/classifier/en",
-         1,
-         vec![
-            FileSpec::new("model.bin", AccessKind::Random),
-            FileSpec::new("labels.txt", AccessKind::Stream),
+         [
+            ("model.bin", AccessKind::Random),
+            ("labels.txt", AccessKind::Stream),
          ],
       ),
    ]
@@ -60,10 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .compact()
       .init();
 
-   // Pre-seed the tree, laid out as <root>/<id>/v<lane>/<revision>/.
+   // Pre-seed the tree, laid out as <root>/<id>/<revision>/.
    let root = tempfile::tempdir()?;
    seed(
-      &root.path().join("nlp/tokenizer/en/v1/20260821"),
+      &root.path().join("nlp/tokenizer/en/20260821"),
       &[
          ("meta.json".into(), r#"{"format":1,"language":"en"}"#.into()),
          ("index.dat".into(), random_text(2048)),
@@ -71,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       ],
    )?;
    seed(
-      &root.path().join("models/classifier/en/v1/20260815"),
+      &root.path().join("models/classifier/en/20260815"),
       &[
          ("model.bin".into(), random_text(4096)),
          ("labels.txt".into(), "positive\nnegative\nneutral".into()),

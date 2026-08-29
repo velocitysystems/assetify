@@ -5,7 +5,7 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, FileSpec};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
 use tauri::Manager as _;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,9 +37,9 @@ pub fn run() {
 }
 
 /// Seed the cache tree a shipping app would have downloaded earlier:
-/// <root>/<id>/v<lane>/<revision>/<files>. Idempotent across runs.
+/// <root>/<id>/<revision>/<files>. Idempotent across runs.
 fn seed(cache_root: &Path) -> std::io::Result<()> {
-   let revision = cache_root.join("nlp/tokenizer/en/v1/20260821");
+   let revision = cache_root.join("nlp/tokenizer/en/20260821");
    std::fs::create_dir_all(&revision)?;
    std::fs::write(
       revision.join("meta.json"),
@@ -51,10 +51,9 @@ fn seed(cache_root: &Path) -> std::io::Result<()> {
 async fn load(engine: &Assetify) -> std::io::Result<()> {
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
-      vec![
-         FileSpec::new("meta.json", AccessKind::Stream),
-         FileSpec::new("index.dat", AccessKind::Random),
+      [
+         ("meta.json", AccessKind::Stream),
+         ("index.dat", AccessKind::Random),
       ],
    );
    match engine.asset(request).await {

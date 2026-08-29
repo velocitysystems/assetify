@@ -73,7 +73,6 @@ fn provider(mode: WindowMode) -> MemoryProvider {
 fn fixture_request() -> AssetRequest {
    AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
       vec![
          FileSpec::new("meta.json", AccessKind::Stream),
          FileSpec::new("model.bin", AccessKind::Random),
@@ -255,11 +254,10 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
    let requests = [
       AssetRequest::new(
          "nlp/tokenizer/en",
-         1,
          vec![FileSpec::new("missing.dat", AccessKind::Stream)],
       ),
       fixture_request(),
-      AssetRequest::new("no/such/asset", 1, vec![]),
+      AssetRequest::new("no/such/asset", Vec::<FileSpec>::new()),
    ];
    let outcomes = provider(WindowMode::Offered).provide(&requests).await;
    assert_eq!(outcomes.len(), 3, "one outcome per request, in order");
@@ -284,7 +282,6 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
 async fn memory_provider_declines_materialized_paths_with_guidance() {
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
       vec![FileSpec::new("index.dat", AccessKind::AssetPath)],
    );
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;

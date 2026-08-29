@@ -6,28 +6,28 @@ use std::collections::HashMap;
 
 use crate::source::{AssetSource, ResolveError, SourceResolver};
 
-/// A [`SourceResolver`] over a fixed in-code map of
-/// `(id, format_major)` → [`AssetSource`].
+/// A [`SourceResolver`] over a fixed in-code map of asset id →
+/// [`AssetSource`].
 ///
 /// The right tool when sources are known at build time or loaded from
 /// the application's own configuration. Anything dynamic — a remote
 /// catalog, per-user entitlements — implements [`SourceResolver`]
 /// directly instead.
 pub struct StaticResolver {
-   sources: HashMap<(String, u32), AssetSource>,
+   sources: HashMap<String, AssetSource>,
 }
 
 impl StaticResolver {
-   /// A resolver over `(id, format_major, source)` entries.
+   /// A resolver over `(id, source)` entries.
    pub fn new<I, S>(entries: I) -> Self
    where
-      I: IntoIterator<Item = (S, u32, AssetSource)>,
+      I: IntoIterator<Item = (S, AssetSource)>,
       S: Into<String>,
    {
       StaticResolver {
          sources: entries
             .into_iter()
-            .map(|(id, major, source)| ((id.into(), major), source))
+            .map(|(id, source)| (id.into(), source))
             .collect(),
       }
    }
@@ -35,12 +35,8 @@ impl StaticResolver {
 
 #[async_trait::async_trait]
 impl SourceResolver for StaticResolver {
-   async fn resolve(
-      &self,
-      id: &str,
-      format_major: u32,
-   ) -> Result<Option<AssetSource>, ResolveError> {
-      Ok(self.sources.get(&(id.to_string(), format_major)).cloned())
+   async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError> {
+      Ok(self.sources.get(id).cloned())
    }
 }
 
@@ -57,7 +53,6 @@ mod tests {
             .unwrap();
       let resolver = StaticResolver::new([(
          "nlp/tokenizer/en",
-         4,
          AssetSource::new(
             "20260821",
             vec![FileSource::new(
@@ -70,17 +65,8 @@ mod tests {
          ),
       )]);
 
-      let hit = resolver.resolve("nlp/tokenizer/en", 4).await.unwrap();
+      let hit = resolver.resolve("nlp/tokenizer/en").await.unwrap();
       assert_eq!(hit.unwrap().revision, "20260821");
-
-      assert!(
-         resolver
-            .resolve("nlp/tokenizer/en", 5)
-            .await
-            .unwrap()
-            .is_none(),
-         "a different lane is a different entry"
-      );
-      assert!(resolver.resolve("unknown", 4).await.unwrap().is_none());
+      assert!(resolver.resolve("unknown").await.unwrap().is_none());
    }
 }

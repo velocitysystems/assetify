@@ -6,8 +6,8 @@
 //! currently holds each asset for *this* application's distribution
 //! channel. A [`SourceResolver`] answers exactly that question — no
 //! manifest wire format, no versioning negotiation, just "asset `id`
-//! in lane `format_major` is available as revision `r`, from these
-//! per-file locations, with these digests."
+//! is available as revision `r`, from these per-file locations, with
+//! these digests."
 
 #[cfg(feature = "http")]
 pub mod http;
@@ -104,7 +104,7 @@ pub struct AssetSource {
    /// The revision these files constitute: one path segment,
    /// lexicographically ordered against its siblings (a `YYYYMMDD`
    /// date stamp sorts correctly by construction; so does a
-   /// zero-padded counter). Newest wins within a lane.
+   /// zero-padded counter). Newest wins within an asset.
    pub revision: String,
    /// Every file of the revision. Acquisition is all-or-nothing: if
    /// any file fails to fetch or verify, nothing is placed.
@@ -150,13 +150,8 @@ impl ResolveError {
 /// for an asset that is not already being acquired.
 #[async_trait::async_trait]
 pub trait SourceResolver: Send + Sync {
-   /// Where asset `id`, readable by consumers of `format_major`, can
-   /// currently be acquired.
-   async fn resolve(
-      &self,
-      id: &str,
-      format_major: u32,
-   ) -> Result<Option<AssetSource>, ResolveError>;
+   /// Where asset `id` can currently be acquired.
+   async fn resolve(&self, id: &str) -> Result<Option<AssetSource>, ResolveError>;
 }
 
 #[cfg(test)]

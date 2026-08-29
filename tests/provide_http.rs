@@ -52,7 +52,6 @@ async fn mount(server: &MockServer, revision: &str, name: &str, bytes: &[u8], hi
 fn request() -> AssetRequest {
    AssetRequest::new(
       "models/sentiment",
-      1,
       vec![
          FileSpec::new("model.bin", AccessKind::Random),
          FileSpec::new("labels.txt", AccessKind::Stream),
@@ -85,7 +84,6 @@ async fn downloads_verify_and_later_requests_hit_the_cache() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "models/sentiment",
-         1,
          http_source(
             &server.uri(),
             "r1",
@@ -110,7 +108,6 @@ async fn a_corrupt_body_cleans_staging_and_places_nothing() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "models/sentiment",
-         1,
          // The resolver promises different bytes than the server has.
          http_source(
             &server.uri(),
@@ -144,7 +141,6 @@ async fn server_errors_fall_back_to_the_cached_revision() {
       let engine = Assetify::builder(cache.path())
          .resolver(StaticResolver::new([(
             "models/sentiment",
-            1,
             http_source(
                &server.uri(),
                "r1",
@@ -161,7 +157,6 @@ async fn server_errors_fall_back_to_the_cached_revision() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "models/sentiment",
-         1,
          http_source(
             "http://127.0.0.1:9", // discard port: connection refused
             "r2",
@@ -178,7 +173,6 @@ async fn server_errors_fall_back_to_the_cached_revision() {
       engine
          .asset(AssetRequest::new(
             "models/other",
-            1,
             vec![FileSpec::new("model.bin", AccessKind::Random)],
          ))
          .await,
@@ -196,7 +190,6 @@ async fn a_404_on_one_file_of_a_set_places_nothing() {
    let engine = Assetify::builder(cache.path())
       .resolver(StaticResolver::new([(
          "models/sentiment",
-         1,
          http_source(
             &server.uri(),
             "r1",
@@ -222,7 +215,6 @@ async fn concurrent_requests_download_each_file_exactly_once() {
       Assetify::builder(cache.path())
          .resolver(StaticResolver::new([(
             "models/sentiment",
-            1,
             http_source(
                &server.uri(),
                "r1",

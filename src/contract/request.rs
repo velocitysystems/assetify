@@ -24,6 +24,14 @@ impl FileSpec {
    }
 }
 
+impl<S: Into<String>> From<(S, AccessKind)> for FileSpec {
+   /// `("model.bin", AccessKind::Random)` reads as a spec directly —
+   /// the flat spelling request call sites use.
+   fn from((name, access): (S, AccessKind)) -> Self {
+      FileSpec::new(name, access)
+   }
+}
+
 /// A delivery the consumer could not load: the payload verified and
 /// arrived intact, yet failed the consumer's own checks (a named gap,
 /// an access-kind mismatch, an unreadable payload format, failed
@@ -46,12 +54,13 @@ pub struct AssetRequest {
    /// are validated before touching the filesystem: no `.` or `..`
    /// segments, no absolute paths, no empty segments, and segment
    /// characters limited to alphanumerics, `-`, `_`, and `.`.
+   ///
+   /// The id is the compatibility boundary: every revision under one
+   /// id must be readable by every consumer that requests it. If your
+   /// payload format can change incompatibly, encode the format in
+   /// the id (`"nlp/tokenizer/en/v2"`) so incompatible payloads are
+   /// simply different assets.
    pub id: String,
-   /// The payload format major version this consumer build reads —
-   /// the **hard** half of versioning. A payload outside this lane is
-   /// unreadable by the consumer and must never be served; which
-   /// revision to serve *within* the lane is the provider's choice.
-   pub format_major: u32,
    /// Every file the asset must contain, each with its required
    /// access kind.
    pub files: Vec<FileSpec>,
@@ -62,12 +71,13 @@ pub struct AssetRequest {
 }
 
 impl AssetRequest {
-   /// A request for one asset, with no rejection echo.
-   pub fn new(id: impl Into<String>, format_major: u32, files: Vec<FileSpec>) -> Self {
+   /// A request for one asset, with no rejection echo. Files are
+   /// anything spec-shaped — `FileSpec` values or plain
+   /// `(name, AccessKind)` pairs.
+   pub fn new(id: impl Into<String>, files: impl IntoIterator<Item = impl Into<FileSpec>>) -> Self {
       AssetRequest {
          id: id.into(),
-         format_major,
-         files,
+         files: files.into_iter().map(Into::into).collect(),
          rejected: None,
       }
    }

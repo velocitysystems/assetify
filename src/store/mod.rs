@@ -1,12 +1,10 @@
 //! The on-disk store: a validated, versioned cache of asset
 //! revisions.
 //!
-//! Layout: `<root>/<id>/v<format_major>/<revision>/…`. The two path
-//! tiers carry the two halves of versioning — the lane (`v<major>`)
-//! is the hard readability boundary (a request never crosses lanes,
-//! so cache identity stays sound across consumer upgrades), and the
-//! revision is the soft freshness axis (lexicographic, newest wins,
-//! serve what you have when acquisition fails). Revision directories
+//! Layout: `<root>/<id>/<revision>/…`. The id is the compatibility
+//! boundary (every revision under one id must stay readable by its
+//! consumers); the revision is the freshness axis (lexicographic,
+//! newest wins, serve what you have when acquisition fails). Revision directories
 //! are placed atomically and never mutated; a revision the consumer
 //! could not load is poisoned and skipped thereafter.
 
@@ -39,25 +37,25 @@ impl Store {
       }
    }
 
-   /// `<root>/<id>/v<major>`. Callers validate `id` first.
-   pub(crate) fn lane_dir(&self, id: &str, format_major: u32) -> PathBuf {
-      layout::lane_dir(&self.root, id, format_major)
+   /// `<root>/<id>`. Callers validate `id` first.
+   pub(crate) fn asset_dir(&self, id: &str) -> PathBuf {
+      layout::asset_dir(&self.root, id)
    }
 
-   /// `<root>/<id>/v<major>/<revision>`. Callers validate first.
-   pub(crate) fn revision_dir(&self, id: &str, format_major: u32, revision: &str) -> PathBuf {
-      self.lane_dir(id, format_major).join(revision)
+   /// `<root>/<id>/<revision>`. Callers validate first.
+   pub(crate) fn revision_dir(&self, id: &str, revision: &str) -> PathBuf {
+      self.asset_dir(id).join(revision)
    }
 
    /// Whether this revision is on disk and serviceable.
-   pub(crate) fn has_revision(&self, id: &str, format_major: u32, revision: &str) -> bool {
-      let dir = self.revision_dir(id, format_major, revision);
+   pub(crate) fn has_revision(&self, id: &str, revision: &str) -> bool {
+      let dir = self.revision_dir(id, revision);
       dir.is_dir() && !self.poison.is_poisoned(&dir)
    }
 
-   /// The newest serviceable revision in the lane, if any.
-   pub(crate) fn newest_revision(&self, id: &str, format_major: u32) -> Option<String> {
-      resolve::newest_unpoisoned(&self.lane_dir(id, format_major), &self.poison)
+   /// The asset's newest serviceable revision, if any.
+   pub(crate) fn newest_revision(&self, id: &str) -> Option<String> {
+      resolve::newest_unpoisoned(&self.asset_dir(id), &self.poison)
    }
 
    /// A unique staging directory on the root's filesystem.
@@ -70,17 +68,14 @@ impl Store {
       &self,
       staged: TempDir,
       id: &str,
-      format_major: u32,
       revision: &str,
    ) -> io::Result<Placement> {
-      place::place(staged, &self.revision_dir(id, format_major, revision))
+      place::place(staged, &self.revision_dir(id, revision))
    }
 
    /// Poison a revision the consumer could not load.
-   pub(crate) fn poison_revision(&self, id: &str, format_major: u32, revision: &str, reason: &str) {
-      self
-         .poison
-         .poison(&self.revision_dir(id, format_major, revision), reason);
+   pub(crate) fn poison_revision(&self, id: &str, revision: &str, reason: &str) {
+      self.poison.poison(&self.revision_dir(id, revision), reason);
    }
 
    /// Locate a delivered file by unique name within a revision.
@@ -102,22 +97,22 @@ mod tests {
       std::fs::write(staged.path().join("meta.json"), b"{}").unwrap();
       assert_eq!(
          store
-            .place_revision(staged, "nlp/tokenizer/en", 4, "20260821")
+            .place_revision(staged, "nlp/tokenizer/en", "20260821")
             .unwrap(),
          Placement::Placed
       );
 
-      assert!(store.has_revision("nlp/tokenizer/en", 4, "20260821"));
+      assert!(store.has_revision("nlp/tokenizer/en", "20260821"));
       assert_eq!(
-         store.newest_revision("nlp/tokenizer/en", 4).as_deref(),
+         store.newest_revision("nlp/tokenizer/en").as_deref(),
          Some("20260821")
       );
       assert!(
-         store.newest_revision("nlp/tokenizer/en", 5).is_none(),
-         "a lane is never crossed"
+         store.newest_revision("nlp/tokenizer/de").is_none(),
+         "assets never bleed into each other"
       );
 
-      let dir = store.revision_dir("nlp/tokenizer/en", 4, "20260821");
+      let dir = store.revision_dir("nlp/tokenizer/en", "20260821");
       assert!(store.find_file(&dir, "meta.json").is_ok());
    }
 
@@ -130,14 +125,14 @@ mod tests {
          let staged = store.stage().unwrap();
          std::fs::write(staged.path().join("model.bin"), revision).unwrap();
          store
-            .place_revision(staged, "models/sentiment", 1, revision)
+            .place_revision(staged, "models/sentiment", revision)
             .unwrap();
       }
 
-      store.poison_revision("models/sentiment", 1, "20260821", "unloadable");
-      assert!(!store.has_revision("models/sentiment", 1, "20260821"));
+      store.poison_revision("models/sentiment", "20260821", "unloadable");
+      assert!(!store.has_revision("models/sentiment", "20260821"));
       assert_eq!(
-         store.newest_revision("models/sentiment", 1).as_deref(),
+         store.newest_revision("models/sentiment").as_deref(),
          Some("20260812")
       );
    }

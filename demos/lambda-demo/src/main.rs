@@ -10,7 +10,7 @@
 use std::io::Read as _;
 use std::path::PathBuf;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, FileSpec};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 
@@ -31,10 +31,9 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
    let engine = Assetify::builder(assets_root()).build()?;
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
-      vec![
-         FileSpec::new("meta.json", AccessKind::Stream),
-         FileSpec::new("index.dat", AccessKind::Random),
+      [
+         ("meta.json", AccessKind::Stream),
+         ("index.dat", AccessKind::Random),
       ],
    );
 

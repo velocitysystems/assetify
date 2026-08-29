@@ -4,7 +4,7 @@
 
 use std::io::Read as _;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, FileSpec};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
 use napi_derive::napi;
 
 /// What crosses the bridge: names and sizes, never bytes or handles.
@@ -20,8 +20,8 @@ pub struct AssetSummary {
 #[napi]
 pub async fn load_asset(cache_dir: String) -> napi::Result<AssetSummary> {
    // Seed the cache tree a real app would have downloaded earlier:
-   // <root>/<id>/v<lane>/<revision>/<files>.
-   let revision = std::path::Path::new(&cache_dir).join("nlp/tokenizer/en/v1/20260821");
+   // <root>/<id>/<revision>/<files>.
+   let revision = std::path::Path::new(&cache_dir).join("nlp/tokenizer/en/20260821");
    std::fs::create_dir_all(&revision).map_err(reason)?;
    std::fs::write(
       revision.join("meta.json"),
@@ -33,10 +33,9 @@ pub async fn load_asset(cache_dir: String) -> napi::Result<AssetSummary> {
    let engine = Assetify::builder(&cache_dir).build().map_err(reason)?;
    let request = AssetRequest::new(
       "nlp/tokenizer/en",
-      1,
-      vec![
-         FileSpec::new("meta.json", AccessKind::Stream),
-         FileSpec::new("index.dat", AccessKind::Random),
+      [
+         ("meta.json", AccessKind::Stream),
+         ("index.dat", AccessKind::Random),
       ],
    );
 
