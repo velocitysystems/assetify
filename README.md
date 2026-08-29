@@ -81,8 +81,17 @@ match outcome {
 }
 ```
 
-The first request downloads, verifies, and caches; every later request — and
-every request while offline — serves from disk.
+What the first run logs:
+
+```text
+ INFO staged    asset=nlp/tokenizer/en revision=20260821 file=model.bin
+ INFO placed    asset=nlp/tokenizer/en lane=1 revision=20260821
+ INFO delivered asset=nlp/tokenizer/en lane=1 revision=20260821 files=1
+```
+
+Every later request — including every request made offline — skips straight to
+serving from disk: the revision is cached under
+`<root>/nlp/tokenizer/en/v1/20260821/`.
 
 ## Usage
 
@@ -93,44 +102,43 @@ wins:
 
 | You are… | Declare |
 |---|---|
-| Loading through a library that takes a filesystem path | `AccessKind::MaterializedPath` |
+| Loading through a library that takes a filesystem path | `AccessKind::AssetPath` |
 | Seeking, reading byte ranges, or probing the file in place | `AccessKind::Random` |
 | Anything else (one forward parse) | `AccessKind::Stream` |
 
-Don't care? `MaterializedPath` for everything is legal and gives you plain
+Don't care? `AccessKind::AssetPath` for everything is legal and gives you plain
 paths.
 
 ### Reading delivered files
 
-Files come back by name, each behind the access object you declared:
+Files come back by name. You know the kind you asked for, so take it
+directly:
 
 ```rust
 use std::io::Read;
-use assetify::FileAccess;
 
 let mut asset = /* AssetResponse::Available { asset } */;
 
-match asset.take_file("model.bin").unwrap().access {
-   FileAccess::Stream(mut stream) => {
-      let mut bytes = Vec::new();
-      stream.read_to_end(&mut bytes)?;
-   }
-   FileAccess::Random(random) => {
-      // Positioned reads from any thread…
-      let mut header = [0u8; 16];
-      random.read_at_exact(0, &mut header)?;
-      // …or the whole file zero-copy, when the backing offers it.
-      if let Some(bytes) = random.as_bytes() { /* mmap window */ }
-   }
-   FileAccess::Path(path) => {
-      some_library::load_from(&*path)?; // a real, stable file path
-   }
-}
+// Stream: one forward parse — config, metadata, vocabularies.
+let mut stream = asset.take_stream("meta.json").expect("requested as a stream");
+let mut meta = String::new();
+stream.read_to_string(&mut meta)?;
+
+// Random: positioned reads from any thread, plus a zero-copy window
+// when the backing offers one (mmap does).
+let index = asset.take_random("index.dat").expect("requested as random access");
+let mut header = [0u8; 16];
+index.read_at_exact(0, &mut header)?;
+if let Some(bytes) = index.as_bytes() { /* the whole file, zero-copy */ }
+
+// AssetPath: a real, stable path — for libraries that insist on
+// opening files themselves.
+let path = asset.take_asset_path("rules.txt").expect("requested as a path");
+some_library::load_from(&*path)?;
 ```
 
-Know the kind you asked for? Skip the `match`: `take_stream(name)`,
-`take_random(name)`, and `take_path(name)` return the object directly —
-`None` only when the name is absent or the kind differs from the request.
+To handle any kind generically, match `take_file(name)`'s `FileAccess`
+(`Stream`, `Random`, or `AssetPath`) instead.
 
 ### Custom sources
 
@@ -155,28 +163,31 @@ impl SourceResolver for ManifestResolver {
       id: &str,
       format_major: u32,
    ) -> Result<Option<AssetSource>, ResolveError> {
-      // Unknown asset: Ok(None) — assetify serves its cache, or
-      // reports the asset unavailable.
       let Some(entry) = self.manifest.lookup(id, format_major) else {
          return Ok(None);
       };
-
-      let mut files = Vec::new();
-      for file in &entry.files {
-         files.push(
-            FileSource::http(&file.name, &file.url, &file.sha256)
-               .map_err(|e| ResolveError::new(e.to_string()))?,
-         );
-      }
+      let files = entry
+         .files
+         .iter()
+         .map(|f| FileSource::http(&f.name, &f.url, &f.sha256))
+         .collect::<Result<_, _>>()
+         .map_err(|e| ResolveError::new(e.to_string()))?;
       Ok(Some(AssetSource::new(entry.revision.clone(), files)))
    }
 }
 ```
 
-Return `Err(ResolveError)` when resolution fails *right now* (offline, backend
-down): assetify falls back to the newest revision already on disk. Resolvers
-run on every request not already in flight — if resolution is expensive, cache
-your own lookups inside it.
+The three return values:
+
+- `Ok(Some(source))` — acquire from here (a cached copy of that revision skips
+  the network entirely).
+- `Ok(None)` — you know of no source: assetify serves its cache, or reports
+  the asset unavailable.
+- `Err(…)` — resolution failed *right now* (offline, backend down): assetify
+  falls back to the newest revision on disk.
+
+Resolvers run on every request not already in flight — if resolution is
+expensive, cache your own lookups inside it.
 
 ### Cache-only mode
 
@@ -205,6 +216,9 @@ retry.rejected = Some(RejectedDelivery { reason: "schema check failed".into() })
 // The next provide poisons that revision and recovers via a newer one.
 ```
 
+The poison marker persists on disk, so a restarted app never loops on the
+same bad payload.
+
 ### Testing your consumer
 
 With the `test-util` feature, `MemoryProvider` serves files from heap buffers
@@ -217,6 +231,9 @@ use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
 let provider = MemoryProvider::new(WindowMode::Declined)
    .with_asset("nlp/tokenizer/en", MemoryAsset::new().with_file("model.bin", b"…".to_vec()));
 ```
+
+Run your loader under all three modes — `Offered`, `Declined`, `ShortReads` —
+and it is proven correct on every backing assetify will ever hand it.
 
 ### Logging
 
