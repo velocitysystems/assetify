@@ -1,0 +1,20 @@
+[package]
+name = "assetify"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+description = "Portable asset access: declare the files you need and how you'll read them; get verified, cached, offline-capable local assets behind generic access traits."
+repository = "https://github.com/velocitysystems/assetify"
+readme = "README.md"
+
+[features]
+default = []
+test-util = []
+
+[dependencies]
+async-trait = "0.1"
+
+[dev-dependencies]
+assetify = { path = ".", features = ["test-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
