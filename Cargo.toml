@@ -2,7 +2,7 @@
 name = "assetify"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.94.0"
 license = "MIT"
 description = "Declare your assets; assetify fetches, verifies, caches, and serves them — as a stream, random access, or a path, online or offline."
 repository = "https://github.com/velocitysystems/assetify"
@@ -14,10 +14,10 @@ mmap = ["dep:memmap2"]
 test-util = []
 
 [dependencies]
-async-trait = "0.1"
-memmap2 = { version = "0.9", optional = true }
+async-trait = "0.1.92"
+memmap2 = { version = "0.9.11", optional = true }
+tempfile = "3.27.0"
 
 [dev-dependencies]
 assetify = { path = ".", default-features = false, features = ["test-util"] }
-tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

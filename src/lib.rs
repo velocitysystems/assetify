@@ -47,6 +47,8 @@
 //! [`WindowMode`](testing::WindowMode), so consumer code can prove it
 //! behaves identically whether or not a backing offers the window.
 
+#![allow(clippy::upper_case_acronyms)]
+
 pub mod access;
 mod contract;
 #[cfg(feature = "test-util")]

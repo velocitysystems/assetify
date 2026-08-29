@@ -17,8 +17,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo lint-clippy
+      - run: cargo lint-fmt
 
   test:
     name: Test (feature matrix)
