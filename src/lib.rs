@@ -32,7 +32,7 @@
 //!
 //! # Degraded operation
 //!
-//! A missing asset is never an error. [`AssetOutcome::Unavailable`]
+//! A missing asset is never an error. [`AssetResponse::Unavailable`]
 //! degrades one capability; the consumer keeps running at whatever
 //! level its loaded assets allow, and a later request retries. A
 //! delivery the consumer *could not load* is echoed back as a
@@ -123,7 +123,7 @@ mod store;
 pub mod testing;
 
 pub use contract::{
-   AccessKind, AssetOutcome, AssetRequest, FileAccess, FileSpec, MaterializedPath, PreparedAsset,
+   AccessKind, AssetRequest, AssetResponse, FileAccess, FileSpec, MaterializedPath, PreparedAsset,
    PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};

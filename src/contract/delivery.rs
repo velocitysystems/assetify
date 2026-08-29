@@ -39,7 +39,7 @@ pub struct PreparedAsset {
 
 impl PreparedAsset {
    /// A delivery of the given files. Provider-side API; consumers
-   /// receive these inside [`AssetOutcome::Available`].
+   /// receive these inside [`AssetResponse::Available`].
    pub fn new(files: Vec<PreparedFile>) -> Self {
       PreparedAsset { files }
    }
@@ -61,7 +61,7 @@ impl PreparedAsset {
 /// Per-request result of a [`Provider::provide`](crate::Provider::provide)
 /// call.
 #[derive(Debug)]
-pub enum AssetOutcome {
+pub enum AssetResponse {
    /// The asset is prepared and every named file is readable behind
    /// its access object. The consumer still validates content against
    /// its own format checks; a failed load is echoed back as a

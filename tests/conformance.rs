@@ -9,7 +9,7 @@ use std::sync::Arc;
 use assetify::access::MemoryRandom;
 use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, FileAccess, FileSpec, Provider, RandomAccess,
+   AccessKind, AssetRequest, AssetResponse, FileAccess, FileSpec, Provider, RandomAccess,
 };
 
 const PAYLOAD: &[u8] = b"the quick brown fox jumps over the lazy dog";
@@ -160,7 +160,7 @@ async fn every_window_mode_is_consumer_equivalent() {
       WindowMode::ShortReads,
    ] {
       let outcomes = provider(mode).provide(&[fixture_request()]).await;
-      let AssetOutcome::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
+      let AssetResponse::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
          panic!("fixture asset must be available under {mode:?}");
       };
 
@@ -226,7 +226,7 @@ async fn resident_access_is_shareable_across_threads() {
    let outcomes = provider(WindowMode::ShortReads)
       .provide(&[fixture_request()])
       .await;
-   let AssetOutcome::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
+   let AssetResponse::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
       panic!("fixture asset must be available");
    };
    let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
@@ -264,7 +264,7 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
    let outcomes = provider(WindowMode::Offered).provide(&requests).await;
    assert_eq!(outcomes.len(), 3, "one outcome per request, in order");
 
-   let AssetOutcome::Unavailable { reason } = &outcomes[0] else {
+   let AssetResponse::Unavailable { reason } = &outcomes[0] else {
       panic!("a named gap must be unavailable");
    };
    assert!(
@@ -272,9 +272,9 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
       "gap names the file: {reason}"
    );
 
-   assert!(matches!(&outcomes[1], AssetOutcome::Available { .. }));
+   assert!(matches!(&outcomes[1], AssetResponse::Available { .. }));
 
-   let AssetOutcome::Unavailable { reason } = &outcomes[2] else {
+   let AssetResponse::Unavailable { reason } = &outcomes[2] else {
       panic!("an unknown asset must be unavailable");
    };
    assert!(reason.contains("no/such/asset"), "names the id: {reason}");
@@ -288,7 +288,7 @@ async fn memory_provider_declines_materialized_paths_with_guidance() {
       vec![FileSpec::new("index.dat", AccessKind::MaterializedPath)],
    );
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;
-   let AssetOutcome::Unavailable { reason } = &outcomes[0] else {
+   let AssetResponse::Unavailable { reason } = &outcomes[0] else {
       panic!("MemoryProvider holds no filesystem");
    };
    assert!(

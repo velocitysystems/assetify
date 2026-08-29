@@ -5,7 +5,7 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use assetify::{AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileAccess, FileSpec};
 use tauri::Manager as _;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -58,7 +58,7 @@ async fn load(engine: &Assetify) {
       ],
    );
    match engine.asset(request).await {
-      AssetOutcome::Available { mut asset } => {
+      AssetResponse::Available { mut asset } => {
          let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
             unreachable!()
          };
@@ -70,6 +70,6 @@ async fn load(engine: &Assetify) {
          };
          tracing::info!(meta = %meta, index_bytes = index.len(), "assets loaded in the app shell");
       }
-      AssetOutcome::Unavailable { reason } => tracing::warn!(%reason, "unavailable"),
+      AssetResponse::Unavailable { reason } => tracing::warn!(%reason, "unavailable"),
    }
 }

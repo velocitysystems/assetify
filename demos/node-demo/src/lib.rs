@@ -4,7 +4,7 @@
 
 use std::io::Read as _;
 
-use assetify::{AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileAccess, FileSpec};
 use napi_derive::napi;
 
 /// What crosses the bridge: names and sizes, never bytes or handles.
@@ -41,7 +41,7 @@ pub async fn load_asset(cache_dir: String) -> napi::Result<AssetSummary> {
    );
 
    match engine.asset(request).await {
-      AssetOutcome::Available { mut asset } => {
+      AssetResponse::Available { mut asset } => {
          let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
             unreachable!()
          };
@@ -57,7 +57,7 @@ pub async fn load_asset(cache_dir: String) -> napi::Result<AssetSummary> {
             index_bytes: index.len() as u32,
          })
       }
-      AssetOutcome::Unavailable { reason } => Err(napi::Error::from_reason(reason)),
+      AssetResponse::Unavailable { reason } => Err(napi::Error::from_reason(reason)),
    }
 }
 

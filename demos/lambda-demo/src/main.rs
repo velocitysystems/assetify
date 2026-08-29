@@ -10,7 +10,7 @@
 use std::io::Read as _;
 use std::path::PathBuf;
 
-use assetify::{AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec};
+use assetify::{AccessKind, AssetResponse, AssetRequest, Assetify, FileAccess, FileSpec};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 
@@ -39,7 +39,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
    );
 
    match engine.asset(request).await {
-      AssetOutcome::Available { mut asset } => {
+      AssetResponse::Available { mut asset } => {
          let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
             unreachable!()
          };
@@ -55,7 +55,7 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
             "indexBytes": index.len(),
          }))
       }
-      AssetOutcome::Unavailable { reason } => Ok(json!({ "unavailable": reason })),
+      AssetResponse::Unavailable { reason } => Ok(json!({ "unavailable": reason })),
    }
 }
 

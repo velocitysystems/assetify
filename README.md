@@ -36,7 +36,7 @@ assetify = { version = "0.1", features = ["http"] }
 
 ```rust
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, FileSource, FileSpec,
+   AccessKind, AssetResponse, AssetRequest, AssetSource, Assetify, FileSource, FileSpec,
    StaticResolver,
 };
 ```
@@ -76,8 +76,8 @@ let outcome = engine
    .await;
 
 match outcome {
-   AssetOutcome::Available { asset } => { /* read the files — see Usage */ }
-   AssetOutcome::Unavailable { reason } => eprintln!("degraded: {reason}"),
+   AssetResponse::Available { asset } => { /* read the files — see Usage */ }
+   AssetResponse::Unavailable { reason } => eprintln!("degraded: {reason}"),
 }
 ```
 
@@ -108,7 +108,7 @@ Files come back by name, each behind the access object you declared:
 use std::io::Read;
 use assetify::FileAccess;
 
-let mut asset = /* AssetOutcome::Available { asset } */;
+let mut asset = /* AssetResponse::Available { asset } */;
 
 match asset.take_file("model.bin").unwrap().access {
    FileAccess::Stream(mut stream) => {

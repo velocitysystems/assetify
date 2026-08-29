@@ -17,7 +17,7 @@
 //!    the backing its declared [`AccessKind`] deserves.
 //!
 //! A missing asset is a degraded capability, never an error: every
-//! failure lands as [`AssetOutcome::Unavailable`] with a reason, and
+//! failure lands as [`AssetResponse::Unavailable`] with a reason, and
 //! the next request retries.
 
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ use crate::access::FileRandom;
 #[cfg(feature = "mmap")]
 use crate::access::MmapRandom;
 use crate::contract::access::{AccessKind, FileAccess, MaterializedPath};
-use crate::contract::delivery::{AssetOutcome, PreparedAsset, PreparedFile};
+use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
@@ -70,7 +70,7 @@ impl Assetify {
    }
 
    /// Single-asset convenience over [`Provider::provide`].
-   pub async fn asset(&self, request: AssetRequest) -> AssetOutcome {
+   pub async fn asset(&self, request: AssetRequest) -> AssetResponse {
       self
          .provide(std::slice::from_ref(&request))
          .await
@@ -79,10 +79,10 @@ impl Assetify {
          .expect("provide returns one outcome per request")
    }
 
-   async fn prepare_one(&self, request: &AssetRequest) -> AssetOutcome {
+   async fn prepare_one(&self, request: &AssetRequest) -> AssetResponse {
       match self.try_prepare(request).await {
-         Ok(asset) => AssetOutcome::Available { asset },
-         Err(reason) => AssetOutcome::Unavailable { reason },
+         Ok(asset) => AssetResponse::Available { asset },
+         Err(reason) => AssetResponse::Unavailable { reason },
       }
    }
 
@@ -327,7 +327,7 @@ impl Assetify {
 
 #[async_trait::async_trait]
 impl Provider for Assetify {
-   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetOutcome> {
+   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetResponse> {
       let mut outcomes = Vec::with_capacity(requests.len());
       for request in requests {
          outcomes.push(self.prepare_one(request).await);

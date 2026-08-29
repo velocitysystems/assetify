@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, Digest, FileAccess, FileSource,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileSource,
    FileSpec, Locator, RejectedDelivery, ResolveError, SourceResolver, StaticResolver,
 };
 use sha2::Digest as _;
@@ -47,17 +47,17 @@ fn tokenizer_source(remote: &Path, revision: &str) -> AssetSource {
    )
 }
 
-fn unwrap_available(outcome: AssetOutcome) -> assetify::PreparedAsset {
+fn unwrap_available(outcome: AssetResponse) -> assetify::PreparedAsset {
    match outcome {
-      AssetOutcome::Available { asset } => asset,
-      AssetOutcome::Unavailable { reason } => panic!("expected availability, got: {reason}"),
+      AssetResponse::Available { asset } => asset,
+      AssetResponse::Unavailable { reason } => panic!("expected availability, got: {reason}"),
    }
 }
 
-fn unwrap_unavailable(outcome: AssetOutcome) -> String {
+fn unwrap_unavailable(outcome: AssetResponse) -> String {
    match outcome {
-      AssetOutcome::Unavailable { reason } => reason,
-      AssetOutcome::Available { .. } => panic!("expected unavailability"),
+      AssetResponse::Unavailable { reason } => reason,
+      AssetResponse::Available { .. } => panic!("expected unavailability"),
    }
 }
 

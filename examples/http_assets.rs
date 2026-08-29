@@ -6,8 +6,8 @@
 use std::io::Read as _;
 
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, FileAccess, FileSource, FileSpec,
-   Provider as _, StaticResolver,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileAccess, FileSource,
+   FileSpec, Provider as _, StaticResolver,
 };
 use rand::distr::{Alphanumeric, SampleString};
 use sha2::Digest as _;
@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    // then one match arm per access kind to consume the deliveries.
    let requests = requests();
    for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
-      let AssetOutcome::Available { mut asset } = outcome else {
+      let AssetResponse::Available { mut asset } = outcome else {
          panic!("published assets serve");
       };
       for spec in &request.files {
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    // verified revisions are cached under <root>/<id>/v<lane>/<rev>/.
    drop(server);
    for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
-      let AssetOutcome::Available { asset } = outcome else {
+      let AssetResponse::Available { asset } = outcome else {
          panic!("cached revisions serve offline");
       };
       tracing::info!(asset = %request.id, files = asset.files.len(), "served from cache, offline");

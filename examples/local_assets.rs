@@ -8,7 +8,7 @@ use std::io::Read as _;
 use std::path::Path;
 
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, Assetify, FileAccess, FileSpec, Provider as _,
+   AccessKind, AssetRequest, AssetResponse, Assetify, FileAccess, FileSpec, Provider as _,
 };
 use rand::distr::{Alphanumeric, SampleString};
 
@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    // match arm per access kind to consume the deliveries.
    let requests = requests();
    for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
-      let AssetOutcome::Available { mut asset } = outcome else {
+      let AssetResponse::Available { mut asset } = outcome else {
          panic!("seeded assets serve");
       };
       for spec in &request.files {

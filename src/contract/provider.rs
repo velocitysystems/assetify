@@ -1,6 +1,6 @@
 //! The provider seam: the one trait a consumer calls.
 
-use crate::contract::delivery::AssetOutcome;
+use crate::contract::delivery::AssetResponse;
 use crate::contract::request::AssetRequest;
 
 /// Makes requested assets readable. The consumer declares *what* it
@@ -21,5 +21,5 @@ pub trait Provider: Send + Sync {
    /// Make the requested assets readable and hand each one back
    /// behind access objects of the declared kinds. One outcome per
    /// request, in request order.
-   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetOutcome>;
+   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetResponse>;
 }

@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use assetify::{
-   AccessKind, AssetOutcome, AssetRequest, AssetSource, Assetify, Digest, FileSource, FileSpec,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, FileSpec,
    Locator, StaticResolver,
 };
 use sha2::Digest as _;
@@ -60,17 +60,17 @@ fn request() -> AssetRequest {
    )
 }
 
-fn unwrap_available(outcome: AssetOutcome) -> assetify::PreparedAsset {
+fn unwrap_available(outcome: AssetResponse) -> assetify::PreparedAsset {
    match outcome {
-      AssetOutcome::Available { asset } => asset,
-      AssetOutcome::Unavailable { reason } => panic!("expected availability, got: {reason}"),
+      AssetResponse::Available { asset } => asset,
+      AssetResponse::Unavailable { reason } => panic!("expected availability, got: {reason}"),
    }
 }
 
-fn unwrap_unavailable(outcome: AssetOutcome) -> String {
+fn unwrap_unavailable(outcome: AssetResponse) -> String {
    match outcome {
-      AssetOutcome::Unavailable { reason } => reason,
-      AssetOutcome::Available { .. } => panic!("expected unavailability"),
+      AssetResponse::Unavailable { reason } => reason,
+      AssetResponse::Available { .. } => panic!("expected unavailability"),
    }
 }
 

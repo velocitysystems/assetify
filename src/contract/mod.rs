@@ -14,6 +14,6 @@ pub mod provider;
 pub mod request;
 
 pub use access::{AccessKind, FileAccess, MaterializedPath, RandomAccess, StreamAccess};
-pub use delivery::{AssetOutcome, PreparedAsset, PreparedFile};
+pub use delivery::{AssetResponse, PreparedAsset, PreparedFile};
 pub use provider::Provider;
 pub use request::{AssetRequest, FileSpec, RejectedDelivery};

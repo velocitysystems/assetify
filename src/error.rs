@@ -2,7 +2,7 @@
 //!
 //! Deliberately small: the boundary itself never returns these —
 //! per-asset failures travel as
-//! [`AssetOutcome::Unavailable`](crate::AssetOutcome::Unavailable)
+//! [`AssetResponse::Unavailable`](crate::AssetResponse::Unavailable)
 //! reasons, because consumers degrade uniformly rather than branch.
 //! Only operations with no degraded answer (building the engine) get
 //! a typed error.

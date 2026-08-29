@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::access::MemoryRandom;
 use crate::contract::access::{AccessKind, FileAccess, RandomAccess};
-use crate::contract::delivery::{AssetOutcome, PreparedAsset, PreparedFile};
+use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 
@@ -81,9 +81,9 @@ impl MemoryProvider {
       self
    }
 
-   fn prepare_one(&self, request: &AssetRequest) -> AssetOutcome {
+   fn prepare_one(&self, request: &AssetRequest) -> AssetResponse {
       let Some(asset) = self.assets.get(&request.id) else {
-         return AssetOutcome::Unavailable {
+         return AssetResponse::Unavailable {
             reason: format!("no asset registered under id {:?}", request.id),
          };
       };
@@ -91,7 +91,7 @@ impl MemoryProvider {
       let mut files = Vec::with_capacity(request.files.len());
       for spec in &request.files {
          let Some(bytes) = asset.files.get(&spec.name) else {
-            return AssetOutcome::Unavailable {
+            return AssetResponse::Unavailable {
                reason: format!("asset {:?} is missing file {:?}", request.id, spec.name),
             };
          };
@@ -102,7 +102,7 @@ impl MemoryProvider {
             })),
             AccessKind::Random => FileAccess::Random(self.random(Arc::clone(bytes))),
             AccessKind::MaterializedPath => {
-               return AssetOutcome::Unavailable {
+               return AssetResponse::Unavailable {
                   reason: format!(
                      "MemoryProvider cannot materialize a path for {:?}; \
                       use a filesystem-backed provider",
@@ -114,7 +114,7 @@ impl MemoryProvider {
          files.push(PreparedFile::new(spec.name.clone(), access));
       }
 
-      AssetOutcome::Available {
+      AssetResponse::Available {
          asset: PreparedAsset::new(files),
       }
    }
@@ -136,7 +136,7 @@ impl MemoryProvider {
 
 #[async_trait::async_trait]
 impl Provider for MemoryProvider {
-   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetOutcome> {
+   async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetResponse> {
       requests.iter().map(|r| self.prepare_one(r)).collect()
    }
 }
