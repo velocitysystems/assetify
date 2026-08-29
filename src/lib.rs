@@ -51,6 +51,7 @@
 
 pub mod access;
 mod contract;
+mod store;
 #[cfg(feature = "test-util")]
 pub mod testing;
 
