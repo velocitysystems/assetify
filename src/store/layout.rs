@@ -12,11 +12,14 @@ use std::path::PathBuf;
 
 /// One segment: starts with an ASCII alphanumeric (which excludes
 /// `.`, `..`, and anything colliding with dot-prefixed reserved
-/// names), then ASCII alphanumerics, `-`, `_`, or `.`.
+/// names), then ASCII alphanumerics, `-`, `_`, or `.` — and no
+/// trailing `.`, which Windows strips, aliasing `foo.` to a
+/// *different* on-disk entry than the segment names.
 fn valid_segment(segment: &str) -> bool {
    let mut chars = segment.chars();
-   chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
-      && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+   let charset_ok = chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+      && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+   charset_ok && !segment.ends_with('.')
 }
 
 /// Validate an asset id: `/`-separated segments, each valid on its
@@ -120,6 +123,19 @@ mod tests {
       for name in ["", "..", ".poisoned", "dir/file.bin", ".hidden"] {
          assert!(validate_file_name(name).is_err(), "{name:?}");
       }
+   }
+
+   #[test]
+   fn rejects_trailing_dot_that_aliases_on_windows() {
+      // Windows strips a trailing dot, so `model.` would name `model`.
+      for name in ["model.", "index.dat.", "a."] {
+         assert!(
+            validate_file_name(name).is_err(),
+            "{name:?} should be rejected"
+         );
+      }
+      // A dot in the middle is ordinary.
+      assert!(validate_file_name("model.bin").is_ok());
    }
 
    #[test]
