@@ -212,13 +212,12 @@ impl Assetify {
          }
 
          if let Payload::Archive(format) = &file.payload {
-            // Each archive extracts into its own subdirectory, so its
-            // entries can never overwrite a sibling's verified file.
-            // The `_` prefix cannot collide with any delivered file
-            // name (those must start alphanumeric) yet is not hidden,
-            // so `find_file` still reaches the extracted files by name
-            // — and a real collision with a sibling surfaces as an
-            // ambiguity, never a silent overwrite.
+            // Each archive extracts into its own `_archive_N` subdir,
+            // so its entries can't overwrite a sibling's verified file.
+            // The `_` prefix can't collide with a delivered name (those
+            // start alphanumeric) yet isn't hidden, so `find_file`
+            // still reaches the files; a real collision surfaces as an
+            // ambiguity, not a silent overwrite.
             let archive_dir = staged.path().join(format!("_archive_{index}"));
             std::fs::create_dir(&archive_dir)
                .map_err(|e| format!("cannot create an extraction directory: {e}"))?;

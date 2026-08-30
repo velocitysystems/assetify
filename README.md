@@ -364,17 +364,14 @@ verify every digest, and atomically rename the complete set into place →
 locate each requested file by name for the consumer to read.
 
 Two properties fall out of the layout. The **id is the compatibility
-boundary** — fallback only ever picks among one asset's own revisions. This
-is the compatibility mechanism: if your payload format can change
-incompatibly, encode its major version in the id —
-`AssetRequest::versioned_id("tokenizer/en", 2)` composes `tokenizer/en/v2` —
-and incompatible payloads are different assets with disjoint revision trees,
-so not even offline fallback can serve an old format to a new reader. One
-rule keeps this sound: keep ids **prefix-free** — never use an id that is a
-path-prefix of another (`a/b` alongside `a/b/v2` makes `v2` look like a
-revision of `a/b`). And placed revisions are **immutable** — new content is
-always a new directory — so memory maps are safe and concurrent writers
-(threads *or* processes) race harmlessly.
+boundary** — fallback only ever picks among one asset's own revisions, so
+encoding your payload format's major version in the id
+(`AssetRequest::versioned_id("tokenizer/en", 2)` → `tokenizer/en/v2`) makes
+incompatible payloads different assets that can never be served in each
+other's place. Keep ids **prefix-free** — never one that is a path-prefix of
+another. And placed revisions are **immutable** — new content is always a new
+directory — so memory maps are safe and concurrent writers (threads *or*
+processes) race harmlessly.
 
 ## Where it runs
 
@@ -411,10 +408,10 @@ platform-specific setup:
 
 | Feature | Default | Provides |
 |---|---|---|
-| `mmap` | ✓ | memory-mapped `Random` backing with the zero-copy window |
+| `mmap` | ✓ | memory-mapped positioned-read backing with the zero-copy window |
 | `reqwest` | | downloading via `Locator::Url` (reqwest + rustls) |
 | `test-util` | | `testing::MemoryProvider` for consumer tests |
-| `zip` | | extraction of `Payload::Archive` zip payloads |
+| `zip` | | zip archive extraction (`FileSource::extracted`) |
 
 ## Examples
 

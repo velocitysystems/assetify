@@ -35,29 +35,18 @@ pub enum Locator {
    /// A URL, retrieved through the configured
    /// [`Fetcher`](crate::Fetcher) — HTTP(S) via the built-in reqwest
    /// fetcher (`reqwest` feature), or any scheme your own fetcher
-   /// understands; the URL is opaque to the engine. Presigned
-   /// object-storage URLs ride this too.
+   /// understands. The URL is opaque to the engine.
    Url(String),
-   /// A file already on the local filesystem, copied in — bytes the
-   /// application acquired through its own channel, or fixtures in
-   /// tests. Verified exactly like a download.
+   /// A file already on the local filesystem, copied in and verified
+   /// exactly like a download.
    File(PathBuf),
 }
 
-/// What the acquired bytes *are*: the file itself, or an archive
-/// whose entries become the revision's files. Set through
-/// [`FileSource::extracted`]; the engine reads it, consumers never
-/// name it.
+/// What the acquired bytes are: the file itself, or an archive to
+/// extract. Set via [`FileSource::extracted`]; internal to the engine.
 #[derive(Clone, Debug)]
 pub(crate) enum Payload {
-   /// The bytes are the file, placed under [`FileSource::name`].
    File,
-   /// The bytes are an archive. After the digest verifies — over the
-   /// archive bytes — its entries are extracted into the revision;
-   /// the archive itself is never placed. Nested directories are
-   /// fine: delivered files are located by unique name anywhere in
-   /// the revision. Extraction needs the matching cargo feature
-   /// (`zip`).
    Archive(ArchiveFormat),
 }
 

@@ -1,9 +1,8 @@
 //! Backings: concrete [`RandomAccess`](crate::RandomAccess)
-//! implementations the built-in engine chooses among per declared
-//! access kind.
+//! implementations the engine reads delivered files through.
 //!
-//! Crate-internal on purpose. Consumers never construct a backing —
-//! they receive one behind [`FileAccess`](crate::FileAccess) — and the
+//! Crate-internal on purpose. Consumers reach these through
+//! [`PreparedFile`](crate::PreparedFile), never directly, and the
 //! `unsafe` inside [`MmapRandom`](mmap::MmapRandom) is sound only
 //! because the sole caller, the store, never mutates a placed
 //! revision. Exposing the backings would hand that memory-safety
