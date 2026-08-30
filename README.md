@@ -371,12 +371,17 @@ verify every digest, and atomically rename the complete set into place → open
 each requested file behind its declared access kind.
 
 Two properties fall out of the layout. The **id is the compatibility
-boundary** — fallback only ever picks among one asset's own revisions, so if
-your payload format can change incompatibly, encode it in the id
-(`tokenizer/en/v2`) and incompatible payloads are simply different
-assets. And placed revisions are **immutable** — new content is always a new
-directory — so memory maps are safe and concurrent writers (threads *or*
-processes) race harmlessly.
+boundary** — fallback only ever picks among one asset's own revisions. This
+is the compatibility mechanism: if your payload format can change
+incompatibly, encode its major version in the id —
+`AssetRequest::versioned_id("tokenizer/en", 2)` composes `tokenizer/en/v2` —
+and incompatible payloads are different assets with disjoint revision trees,
+so not even offline fallback can serve an old format to a new reader. One
+rule keeps this sound: keep ids **prefix-free** — never use an id that is a
+path-prefix of another (`a/b` alongside `a/b/v2` makes `v2` look like a
+revision of `a/b`). And placed revisions are **immutable** — new content is
+always a new directory — so memory maps are safe and concurrent writers
+(threads *or* processes) race harmlessly.
 
 ## Where it runs
 

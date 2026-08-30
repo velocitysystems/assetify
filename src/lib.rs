@@ -80,10 +80,15 @@
 //! that request it — offline fallback picks the newest verified
 //! revision on disk for that id, so an offline device keeps working
 //! on what it has rather than refusing service over staleness. If
-//! your payload format can change incompatibly, encode the format in
-//! the id (`"tokenizer/en/v2"`): incompatible payloads are then
-//! simply different assets, and old application builds keep
-//! requesting — and serving — the id they understand.
+//! your payload format can change incompatibly, encode the format's
+//! major version in the id (`"tokenizer/en/v2"`, composed by
+//! [`AssetRequest::versioned_id`]): incompatible payloads are then
+//! simply different assets with disjoint revision trees, and old
+//! application builds keep requesting — and serving — the id they
+//! understand. One rule keeps the idiom sound: ids must be
+//! prefix-free — never use an id that is a path-prefix of another
+//! (`a/b` alongside `a/b/v2` makes `v2` look like a revision of
+//! `a/b`).
 //!
 //! # Embedding
 //!

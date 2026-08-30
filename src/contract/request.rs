@@ -58,8 +58,10 @@ pub struct AssetRequest {
    /// The id is the compatibility boundary: every revision under one
    /// id must be readable by every consumer that requests it. If your
    /// payload format can change incompatibly, encode the format in
-   /// the id (`"tokenizer/en/v2"`) so incompatible payloads are
-   /// simply different assets.
+   /// the id (`"tokenizer/en/v2"`, composed by
+   /// [`AssetRequest::versioned_id`]) so incompatible payloads are
+   /// simply different assets. Keep ids prefix-free: never use an id
+   /// that is a path-prefix of another.
    pub id: String,
    /// Every file the asset must contain, each with its required
    /// access kind.
@@ -71,6 +73,20 @@ pub struct AssetRequest {
 }
 
 impl AssetRequest {
+   /// THE compatibility mechanism, as an id: encode the payload
+   /// format's major version in the asset id, so incompatible
+   /// payloads are different assets with disjoint revision trees.
+   /// `versioned_id("tokenizer/en", 2)` is `"tokenizer/en/v2"` —
+   /// offline fallback can never cross a format break, because it
+   /// only ever picks among one id's own revisions.
+   ///
+   /// Keep versioned and unversioned ids prefix-free: never use an id
+   /// that is a path-prefix of another (`a/b` alongside `a/b/v2`
+   /// makes `v2` look like a revision of `a/b`).
+   pub fn versioned_id(base: &str, major: u32) -> String {
+      format!("{base}/v{major}")
+   }
+
    /// A request for one asset, with no rejection echo. Files are
    /// `FileRequest` values or plain `(name, AccessKind)` pairs.
    pub fn new(
@@ -82,5 +98,19 @@ impl AssetRequest {
          files: files.into_iter().map(Into::into).collect(),
          rejected: None,
       }
+   }
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+   use crate::store::layout;
+
+   #[test]
+   fn versioned_ids_compose_and_validate() {
+      let id = AssetRequest::versioned_id("tokenizer/en", 2);
+      assert_eq!(id, "tokenizer/en/v2");
+      assert!(layout::validate_id(&id).is_ok());
+      assert!(layout::validate_id(&AssetRequest::versioned_id("a", 10)).is_ok());
    }
 }
