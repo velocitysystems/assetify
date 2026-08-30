@@ -380,6 +380,35 @@ async fn http_sources_explain_the_missing_feature() {
    assert!(reason.contains("`reqwest` feature"), "{reason}");
 }
 
+#[cfg(not(feature = "zip"))]
+#[tokio::test]
+async fn archive_sources_explain_the_missing_feature() {
+   use assetify::ArchiveFormat;
+
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+
+   let file = file_source(remote.path(), "pack.zip", b"pretend archive bytes")
+      .extracted(ArchiveFormat::Zip);
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         AssetSource::new("r1", vec![file]),
+      )]))
+      .build()
+      .unwrap();
+
+   let reason = unwrap_unavailable(
+      engine
+         .asset(AssetRequest::new(
+            "tokenizer/en",
+            vec![FileRequest::new("meta.json", AccessKind::Stream)],
+         ))
+         .await,
+   );
+   assert!(reason.contains("`zip` feature"), "{reason}");
+}
+
 #[tokio::test]
 async fn invalid_ids_and_names_never_touch_the_filesystem() {
    let cache = tempfile::tempdir().unwrap();

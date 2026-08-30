@@ -63,6 +63,12 @@ impl Store {
       place::stage(&self.root)
    }
 
+   /// A temp file in the staging area, for bytes that are processed
+   /// rather than placed (an archive download).
+   pub(crate) fn stage_file(&self) -> io::Result<tempfile::NamedTempFile> {
+      place::stage_file(&self.root)
+   }
+
    /// Atomically place a staged revision; idempotent under races.
    pub(crate) fn place_revision(
       &self,

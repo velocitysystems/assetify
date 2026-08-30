@@ -34,7 +34,7 @@ use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
 use crate::source::fetch::{Fetcher, HashingSink};
-use crate::source::{AssetSource, Locator, Resolver, local};
+use crate::source::{ArchiveFormat, AssetSource, Locator, Payload, Resolver, local};
 use crate::store::{Store, layout};
 
 /// Key of one acquisition flight: one asset id.
@@ -194,7 +194,23 @@ impl Assetify {
 
       for file in &source.files {
          layout::validate_file_name(&file.name)?;
-         let destination = staged.path().join(&file.name);
+
+         // Archive bytes land in a temp file *beside* the staged
+         // revision: verified there, extracted in, never placed.
+         let archive_temp = match &file.payload {
+            Payload::Archive(_) => Some(
+               self
+                  .store
+                  .stage_file()
+                  .map_err(|e| format!("cannot create an archive staging file: {e}"))?,
+            ),
+            Payload::File => None,
+         };
+         let destination = match &archive_temp {
+            Some(temp) => temp.path().to_path_buf(),
+            None => staged.path().join(&file.name),
+         };
+
          let computed = match &file.locator {
             Locator::File(path) => local::copy(path, &destination)
                .await
@@ -204,8 +220,15 @@ impl Assetify {
          if !file.digest.matches_sha256(&computed) {
             return Err(format!("digest mismatch for {:?}", file.name));
          }
+
+         if let Payload::Archive(format) = &file.payload {
+            self
+               .extract(format, &destination, staged.path())
+               .await
+               .map_err(|e| format!("cannot extract {:?}: {e}", file.name))?;
+         }
          tracing::info!(
-         asset = %id,
+            asset = %id,
             revision = %source.revision,
             file = %file.name,
             "staged"
@@ -223,6 +246,32 @@ impl Assetify {
          "placed"
       );
       Ok(())
+   }
+
+   /// Extract a verified archive into the staged revision directory.
+   /// Format support is feature-gated; without the matching feature
+   /// the acquisition degrades like any other failure.
+   #[cfg(feature = "zip")]
+   async fn extract(
+      &self,
+      format: &ArchiveFormat,
+      archive: &Path,
+      destination: &Path,
+   ) -> Result<(), String> {
+      match format {
+         ArchiveFormat::Zip => crate::source::archive::extract_zip(archive, destination).await,
+      }
+   }
+
+   #[cfg(not(feature = "zip"))]
+   async fn extract(
+      &self,
+      format: &ArchiveFormat,
+      _archive: &Path,
+      _destination: &Path,
+   ) -> Result<(), String> {
+      let _ = format;
+      Err("archive payloads need the `zip` feature".to_string())
    }
 
    /// Retrieve one URL through the configured [`Fetcher`], hashing

@@ -23,6 +23,7 @@ default = ["mmap"]
 reqwest = ["dep:reqwest"]
 mmap = ["dep:memmap2"]
 test-util = []
+zip = ["dep:zip"]
 
 [dependencies]
 async-trait = "0.1.92"
@@ -36,6 +37,9 @@ tempfile = "3.27.0"
 thiserror = "2.0.12"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "rt", "sync"] }
 tracing = "0.1.41"
+zip = { version = "8.6.0", default-features = false, features = [
+   "deflate",
+], optional = true }
 
 [dev-dependencies]
 assetify = { path = ".", default-features = false, features = ["test-util"] }

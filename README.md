@@ -236,6 +236,33 @@ let engine = Assetify::builder(root)
 //    engine, and verification always stays on the engine's side.
 ```
 
+### Archive payloads
+
+When the distribution channel ships one compressed archive per asset, mark
+the source as extracted (`zip` feature). It composes with either locator —
+downloaded or local, an archive verifies and extracts identically:
+
+```rust
+use assetify::ArchiveFormat;
+
+let source = AssetSource::new(
+   "20260830",
+   vec![
+      FileSource::url(
+         "pack.zip",
+         "https://assets.example.com/tokenizer/20260830/pack.zip",
+         "…sha-256 of the archive bytes…",
+      )?
+      .extracted(ArchiveFormat::Zip),
+   ],
+);
+```
+
+The digest verifies over the archive bytes; the entries — nested directories
+included — are extracted into the revision before the atomic rename, and the
+archive itself is never placed. Consumers request the *extracted* files by
+name, exactly as if they had been listed individually.
+
 ### Cache-only mode
 
 Omit the resolver and assetify serves whatever the root already holds — the
@@ -337,9 +364,9 @@ platform-specific setup:
   `tracing` events are the current signal.
 - **Data-file CLIs and servers** — timezone, geo, and lookup databases;
   concurrent engines over one cache root are race-safe by design.
-- **Asset packs with many files** — works today at the cost of one request
-  per file; archive support can arrive later as a non-breaking
-  `AssetSource` addition.
+- **Asset packs with many files** — ship them as one zip per asset
+  (`FileSource::archive`, `zip` feature): one download, one digest, the
+  whole extracted tree served by file name.
 - **Mobile and serverless** — see [`demos/`](demos/): verified on the iOS
   simulator and via a local Lambda invoke.
 - **Private sources** — presigned URLs work with the built-in fetcher;
@@ -353,6 +380,7 @@ platform-specific setup:
 | `mmap` | ✓ | memory-mapped `Random` backing with the zero-copy window |
 | `reqwest` | | downloading via `Locator::Url` (reqwest + rustls) |
 | `test-util` | | `testing::MemoryProvider` for consumer tests |
+| `zip` | | extraction of `Payload::Archive` zip payloads |
 
 ## Examples
 

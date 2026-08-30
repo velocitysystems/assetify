@@ -40,6 +40,16 @@ pub(crate) fn stage(root: &Path) -> io::Result<TempDir> {
       .tempdir_in(root.join(STAGING))
 }
 
+/// A fresh temp file in the staging area — the landing spot for an
+/// archive download, which must sit *beside* the staged revision so
+/// the archive itself is never placed. Dropped, it deletes itself.
+pub(crate) fn stage_file(root: &Path) -> io::Result<tempfile::NamedTempFile> {
+   ensure_staging(root)?;
+   tempfile::Builder::new()
+      .prefix("archive-")
+      .tempfile_in(root.join(STAGING))
+}
+
 /// What placement accomplished.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Placement {

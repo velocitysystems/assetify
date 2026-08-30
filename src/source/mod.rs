@@ -9,6 +9,8 @@
 //! is available as revision `r`, from these per-file locations, with
 //! these digests."
 
+#[cfg(feature = "zip")]
+pub(crate) mod archive;
 pub mod fetch;
 pub mod local;
 #[cfg(feature = "reqwest")]
@@ -41,16 +43,46 @@ pub enum Locator {
    File(PathBuf),
 }
 
+/// What the acquired bytes *are*: the file itself, or an archive
+/// whose entries become the revision's files.
+#[non_exhaustive]
+#[derive(Clone, Debug)]
+pub enum Payload {
+   /// The bytes are the file, placed under [`FileSource::name`].
+   File,
+   /// The bytes are an archive. After the digest verifies — over the
+   /// archive bytes — its entries are extracted into the revision;
+   /// the archive itself is never placed. Nested directories are
+   /// fine: delivered files are located by unique name anywhere in
+   /// the revision. Extraction needs the matching cargo feature
+   /// (`zip`).
+   Archive(ArchiveFormat),
+}
+
+/// Archive formats assetify can extract. Non-exhaustive so formats
+/// can arrive without breakage.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub enum ArchiveFormat {
+   /// A zip archive, extracted with the `zip` feature enabled.
+   Zip,
+}
+
 /// One file of an asset revision: its delivered name, where its bytes
 /// live, and the digest they must hash to.
 #[derive(Clone, Debug)]
 pub struct FileSource {
-   /// The name consumers request the file by (one path segment).
+   /// The name consumers request the file by (one path segment). For
+   /// an archive payload this names the archive in diagnostics only —
+   /// consumers request the *extracted* files by their own names.
    pub name: String,
    /// Where the bytes live.
    pub locator: Locator,
    /// What the bytes must hash to, verified before placement.
    pub digest: Digest,
+   /// What the bytes are — a plain file (the default) or an archive
+   /// to extract.
+   pub payload: Payload,
 }
 
 impl FileSource {
@@ -60,6 +92,7 @@ impl FileSource {
          name: name.into(),
          locator,
          digest,
+         payload: Payload::File,
       }
    }
 
@@ -76,6 +109,16 @@ impl FileSource {
          Locator::Url(url.into()),
          Digest::sha256_hex(sha256_hex)?,
       ))
+   }
+
+   /// Mark the source's bytes as an archive to extract into the
+   /// revision, rather than a file to place. Composes with any
+   /// locator: a downloaded archive (`FileSource::url(..)`) and a
+   /// local one (`FileSource::local(..)`) verify and extract
+   /// identically.
+   pub fn extracted(mut self, format: ArchiveFormat) -> Self {
+      self.payload = Payload::Archive(format);
+      self
    }
 
    /// A file copied from the local filesystem, verified against a
