@@ -165,7 +165,7 @@ async fn server_errors_fall_back_to_the_cached_revision() {
       .unwrap();
    unwrap_available(engine.asset(request()).await);
 
-   // The same dead server with an empty lane: unavailable, reason
+   // The same dead server with an empty asset: unavailable, reason
    // carries the acquisition failure.
    let reason = unwrap_unavailable(
       engine

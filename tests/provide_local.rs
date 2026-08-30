@@ -94,7 +94,7 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
    };
    assert_eq!(std::fs::read(&*path).unwrap(), b"rule one");
 
-   // The cache now holds the placed revision under the lane.
+   // The cache now holds the placed revision.
    assert!(
       cache
          .path()
@@ -162,8 +162,8 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
       .unwrap();
    unwrap_available(offline.asset(tokenizer_request()).await);
 
-   // Offline with an empty lane: unavailable, and the reason carries
-   // both the failure and the empty-lane fact.
+   // Offline with an empty asset: unavailable, and the reason carries
+   // both the failure and the nothing-servable fact.
    let reason = unwrap_unavailable(
       offline
          .asset(AssetRequest::new(

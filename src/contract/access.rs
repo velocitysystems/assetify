@@ -1,16 +1,14 @@
 //! Access kinds and access objects: how delivered files are read.
 //!
-//! An [`AccessKind`] is an **intent declaration**, not a mechanism. The
-//! consumer states what it needs on two axes — *how long it holds the
-//! file* (load-scoped vs. resident) and *what shape it reads it in*
-//! (forward, positioned, path) — and the provider chooses the backing:
-//! heap buffer, memory map, plain file descriptor, or a real path.
-//!
-//! That split matters because only the provider can weigh the backing
-//! trade-offs. On memory-tight platforms, mapped pages are clean and
-//! evict for free while heap copies are dirty and count against
-//! process-kill thresholds; nothing in this contract lets a consumer
-//! force the expensive choice on a platform that cannot afford it.
+//! An [`AccessKind`] is an **intent declaration**, not a mechanism:
+//! the consumer states the shape it reads a file in, and the provider
+//! chooses the backing (heap buffer, memory map, file descriptor, or a
+//! real path). Only the provider can weigh the trade-off — on
+//! memory-tight platforms mapped pages evict for free while heap
+//! copies count against process-kill thresholds — so the contract
+//! never lets a consumer force the expensive choice. See [`AccessKind`]
+//! for the first-match rule and [`RandomAccess::as_bytes`] for the
+//! optional zero-copy window.
 
 use std::io::{self, Read};
 use std::ops::Deref;

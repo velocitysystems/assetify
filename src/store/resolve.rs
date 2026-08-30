@@ -1,4 +1,4 @@
-//! Revision resolution within an asset.s directory, and name-matched file lookup
+//! Revision resolution within an asset's directory, and name-matched file lookup
 //! within a revision.
 
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::store::layout;
 use crate::store::poison::PoisonLedger;
 
-/// The newest unpoisoned revision in an asset.s directory, by
+/// The newest unpoisoned revision in an asset's directory, by
 /// lexicographic order of the directory names (`YYYYMMDD`-style names
 /// sort correctly by construction). Foreign entries — files, dot
 /// directories, anything that is not a well-formed revision name —

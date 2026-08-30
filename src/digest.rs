@@ -1,10 +1,7 @@
-//! Content digests: how acquired bytes prove they are the bytes the
-//! resolver promised.
-//!
-//! Every acquired file is hashed *while it streams into staging* and
-//! verified before the revision is placed — a corrupt or tampered
-//! payload never reaches the cache, and verification costs no second
-//! read pass.
+//! Content digests: the expected hash a resolver states for a file,
+//! and parsing it from hex. The engine computes and checks the digest
+//! during acquisition (see [`crate::Fetcher`]); this module only holds
+//! the expectation and the comparison.
 
 use thiserror::Error;
 

@@ -1,8 +1,7 @@
 //! Plain-file backing: positioned reads straight off an open file
-//! descriptor, no window. The minimal correct backing — and the
-//! working proof that [`RandomAccess::as_bytes`] is optional:
-//! consumers needing contiguous bytes materialize their own copy when
-//! handed one of these.
+//! descriptor, and no zero-copy window (`as_bytes` stays `None`) — the
+//! minimal correct backing, and the crate's own proof the window is
+//! optional.
 
 use std::fs::File;
 use std::io;

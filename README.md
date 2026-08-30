@@ -418,8 +418,8 @@ platform-specific setup:
 - **Data-file CLIs and servers** — timezone, geo, and lookup databases;
   concurrent engines over one cache root are race-safe by design.
 - **Asset packs with many files** — ship them as one zip per asset
-  (`FileSource::archive`, `zip` feature): one download, one digest, the
-  whole extracted tree served by file name.
+  (`FileSource::url(..).extracted(ArchiveFormat::Zip)`, `zip` feature): one
+  download, one digest, the whole extracted tree served by file name.
 - **Mobile and serverless** — see [`demos/`](demos/): verified on the iOS
   simulator and via a local Lambda invoke.
 - **Private sources** — presigned URLs work with the built-in fetcher;

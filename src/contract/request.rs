@@ -77,10 +77,9 @@ pub struct AssetRequest {
    /// The id is the compatibility boundary: every revision under one
    /// id must be readable by every consumer that requests it. If your
    /// payload format can change incompatibly, encode the format in
-   /// the id (`"tokenizer/en/v2"`, composed by
-   /// [`AssetRequest::versioned_id`]) so incompatible payloads are
-   /// simply different assets. Keep ids prefix-free: never use an id
-   /// that is a path-prefix of another.
+   /// the id (`"tokenizer/en/v2"`) — see
+   /// [`AssetRequest::versioned_id`], which spells out the idiom and
+   /// its one rule (ids must be prefix-free).
    pub id: String,
    /// Every file the asset must contain, each with its required
    /// access kind.

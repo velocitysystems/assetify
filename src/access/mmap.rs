@@ -1,9 +1,7 @@
-//! Memory-mapped backing: the window-offering backing.
-//!
-//! The right default for files probed in place: mapped pages are
-//! clean and evict for free, so a large index costs near nothing
-//! while idle, and [`RandomAccess::as_bytes`] gives consumers the
-//! zero-copy path.
+//! Memory-mapped backing: positioned reads plus the whole file as the
+//! zero-copy [`RandomAccess::as_bytes`] window — the default for files
+//! probed in place, where mapped pages stay clean and cost near
+//! nothing while idle.
 
 use std::fs::File;
 use std::io;
