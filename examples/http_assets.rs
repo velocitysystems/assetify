@@ -6,8 +6,7 @@
 use std::io::Read as _;
 
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileAccess, FileSource,
-   Provider as _, StaticResolver,
+   AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, Provider as _, StaticResolver,
 };
 use rand::distr::{Alphanumeric, SampleString};
 use sha2::Digest as _;
@@ -23,21 +22,8 @@ fn random_text(len: usize) -> String {
 /// What the consumer asks for: every access kind across two assets.
 fn requests() -> [AssetRequest; 2] {
    [
-      AssetRequest::new(
-         "tokenizer/en",
-         [
-            ("meta.json", AccessKind::Stream),
-            ("index.dat", AccessKind::Random),
-            ("rules.txt", AccessKind::AssetPath),
-         ],
-      ),
-      AssetRequest::new(
-         "models/classifier/en",
-         [
-            ("model.bin", AccessKind::Random),
-            ("labels.txt", AccessKind::Stream),
-         ],
-      ),
+      AssetRequest::new("tokenizer/en", ["meta.json", "index.dat", "rules.txt"]),
+      AssetRequest::new("models/classifier/en", ["model.bin", "labels.txt"]),
    ]
 }
 
@@ -115,36 +101,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    // then one match arm per access kind to consume the deliveries.
    let requests = requests();
    for (request, outcome) in requests.iter().zip(engine.provide(&requests).await) {
-      let AssetResponse::Available { mut asset } = outcome else {
+      let AssetResponse::Available { asset } = outcome else {
          panic!("published assets serve");
       };
-      for spec in &request.files {
-         match asset
-            .take_file(&spec.name)
-            .expect("requested files are delivered")
-            .access
-         {
-            FileAccess::Stream(mut stream) => {
-               let mut bytes = Vec::new();
-               stream.read_to_end(&mut bytes)?;
-               tracing::info!(asset = %request.id, file = %spec.name, bytes = bytes.len(), "streamed");
-            }
-            FileAccess::Random(random) => {
-               let mut sample = [0u8; 12];
-               random.read_at_exact(64, &mut sample)?;
-               tracing::info!(
-                  asset = %request.id,
-                  file = %spec.name,
-                  len = random.len(),
-                  sample = %String::from_utf8_lossy(&sample),
-                  "ranged read"
-               );
-            }
-            FileAccess::AssetPath(path) => {
-               tracing::info!(asset = %request.id, file = %spec.name, path = %path.display(), "materialized");
-            }
-            _ => unreachable!("access kinds a request can name are covered above"),
-         }
+      for name in &request.files {
+         let file = asset.file(name).expect("requested files are delivered");
+         let mut bytes = Vec::new();
+         file.stream()?.read_to_end(&mut bytes)?;
+         let has_window = file.random()?.as_bytes().is_some();
+         tracing::info!(
+            asset = %request.id,
+            file = %name,
+            bytes = bytes.len(),
+            window = has_window,
+            path = file.path().map(|p| p.display().to_string()).unwrap_or_default(),
+            "read"
+         );
       }
    }
 
@@ -155,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       let AssetResponse::Available { asset } = outcome else {
          panic!("cached revisions serve offline");
       };
-      tracing::info!(asset = %request.id, files = asset.files.len(), "served from cache, offline");
+      tracing::info!(asset = %request.id, files = asset.files().len(), "served from cache, offline");
    }
    Ok(())
 }

@@ -1,65 +1,19 @@
-//! Access kinds and access objects: how delivered files are read.
-//!
-//! An [`AccessKind`] is an **intent declaration**, not a mechanism:
-//! the consumer states the shape it reads a file in, and the provider
-//! chooses the backing (heap buffer, memory map, file descriptor, or a
-//! real path). Only the provider can weigh the trade-off — on
-//! memory-tight platforms mapped pages evict for free while heap
-//! copies count against process-kill thresholds — so the contract
-//! never lets a consumer force the expensive choice. See [`AccessKind`]
-//! for the first-match rule and [`RandomAccess::as_bytes`] for the
-//! optional zero-copy window.
+//! Reading delivered files: the forward-stream alias, the
+//! positioned-read trait, and the backing a provider supplies so a
+//! delivered file can be read as a stream, positioned access, or a
+//! real path.
 
 use std::io::{self, Read};
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// What shape the consumer reads a delivered file in.
-///
-/// Pick with a first-match rule:
-///
-/// 1. Loading through a library that takes a filesystem path? →
-///    [`AssetPath`](AccessKind::AssetPath)
-/// 2. Seeking, ranged reads, or probing the file in place? →
-///    [`Random`](AccessKind::Random)
-/// 3. Otherwise → [`Stream`](AccessKind::Stream)
-///
-/// Don't care? Declaring `AssetPath` for everything is legal and
-/// recovers a plain "give me paths" design; the finer kinds only pay
-/// off when you opt in.
-///
-/// How long you hold an access object is your business — a ranged
-/// pass at load time and a resident structure probed per query both
-/// arrive as the same object. (`#[non_exhaustive]` leaves room for
-/// finer, hold-duration-aware variants later without breaking
-/// consumers.)
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AccessKind {
-   /// One forward pass at load time; nothing stays addressable
-   /// afterwards. Deliberately the one kind that never promises a
-   /// file exists on disk, so a provider may serve it from any
-   /// byte source.
-   Stream,
-   /// Positioned reads: byte ranges fetched during load, or a file
-   /// probed in place for the consumer's lifetime — the case
-   /// [`RandomAccess::as_bytes`] exists for.
-   Random,
-   /// The consumer needs a real file on the local filesystem — for
-   /// example, to hand its path to a wrapped library that insists on
-   /// opening files itself. The delivered path stays valid while the
-   /// delivery is held.
-   AssetPath,
-}
-
-/// Forward-only access: one pass, at load time.
+/// Forward-only access: one pass over a file's bytes.
 ///
 /// Deliberately plain [`std::io::Read`] — the provider may back it
 /// with a file, a memory buffer, or a decoding stream; the consumer
 /// cannot tell, which is the point.
 pub type StreamAccess = Box<dyn Read + Send>;
 
-/// Positioned access, for [`AccessKind::Random`] files.
+/// Positioned access over a delivered file.
 ///
 /// `&self` on [`read_at`](RandomAccess::read_at) is deliberate: a
 /// consumer serving many threads from one shared object must not need
@@ -117,85 +71,28 @@ pub trait RandomAccess: Send + Sync {
    }
 }
 
-/// A real path on the local filesystem, delivered for
-/// [`AccessKind::AssetPath`] files.
+/// How a provider serves the read modes of one delivered file: a
+/// forward stream, positioned access, and — when it has one on disk —
+/// a real path. The consumer reaches these through
+/// [`PreparedFile`](crate::PreparedFile) and picks a mode at read
+/// time; a provider that holds bytes in memory simply has no path.
 ///
-/// A newtype rather than a bare [`PathBuf`] so the validity promise
-/// has a place to live: the path stays valid while this value (or the
-/// delivery it came from) is held. Dereferences to [`Path`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AssetPath {
-   path: PathBuf,
-}
-
-impl AssetPath {
-   /// Wrap a path for delivery. Provider-side API; consumers receive
-   /// these inside [`FileAccess::AssetPath`].
-   pub fn new(path: impl Into<PathBuf>) -> Self {
-      AssetPath { path: path.into() }
+/// Most providers hand back a file on disk and never implement this
+/// directly — [`PreparedFile::from_path`](crate::PreparedFile::from_path)
+/// supplies a filesystem backing. Implement it to serve a delivered
+/// file from a source of your own.
+pub trait FileBacking: Send + Sync {
+   /// A real filesystem path for the file, when the provider has one.
+   /// `None` for a backing that holds its bytes in memory, so a
+   /// consumer that needs a path must fall back or use a
+   /// filesystem-backed provider.
+   fn path(&self) -> Option<&Path> {
+      None
    }
 
-   /// The path, borrowed.
-   pub fn as_path(&self) -> &Path {
-      &self.path
-   }
+   /// Open a fresh forward reader over the file.
+   fn open_stream(&self) -> io::Result<StreamAccess>;
 
-   /// The path, owned. The validity promise ends with the delivery it
-   /// came from, so prefer borrowing where you can.
-   pub fn into_path_buf(self) -> PathBuf {
-      self.path
-   }
-}
-
-impl Deref for AssetPath {
-   type Target = Path;
-
-   fn deref(&self) -> &Path {
-      &self.path
-   }
-}
-
-impl AsRef<Path> for AssetPath {
-   fn as_ref(&self) -> &Path {
-      &self.path
-   }
-}
-
-/// The provider's answer to one file's declared [`AccessKind`].
-///
-/// Non-exhaustive to match [`AccessKind`]: a finer access kind can
-/// arrive with the backing that satisfies it, without breaking
-/// consumers that match this.
-#[non_exhaustive]
-pub enum FileAccess {
-   /// Satisfies [`AccessKind::Stream`].
-   Stream(StreamAccess),
-   /// Satisfies [`AccessKind::Random`].
-   Random(Box<dyn RandomAccess>),
-   /// Satisfies [`AccessKind::AssetPath`].
-   AssetPath(AssetPath),
-}
-
-impl FileAccess {
-   /// Whether this object satisfies the declared kind. A mismatch is
-   /// a rejection at load, on the same channel as an unavailable
-   /// asset.
-   pub fn satisfies(&self, kind: AccessKind) -> bool {
-      matches!(
-         (self, kind),
-         (FileAccess::Stream(_), AccessKind::Stream)
-            | (FileAccess::Random(_), AccessKind::Random)
-            | (FileAccess::AssetPath(_), AccessKind::AssetPath)
-      )
-   }
-}
-
-impl std::fmt::Debug for FileAccess {
-   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      match self {
-         FileAccess::Stream(_) => f.write_str("FileAccess::Stream(..)"),
-         FileAccess::Random(r) => write!(f, "FileAccess::Random(len = {})", r.len()),
-         FileAccess::AssetPath(p) => write!(f, "FileAccess::AssetPath({:?})", p.as_path()),
-      }
-   }
+   /// Open positioned access over the file.
+   fn open_random(&self) -> io::Result<Box<dyn RandomAccess>>;
 }

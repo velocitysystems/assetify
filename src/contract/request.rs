@@ -1,37 +1,6 @@
 //! The request side: what a consumer declares it needs.
 
-use crate::contract::access::AccessKind;
 use crate::contract::delivery::DeliveryReceipt;
-
-/// One file the asset must contain, with the access the consumer
-/// requires for it.
-#[derive(Clone, Debug)]
-pub struct FileRequest {
-   /// The file's name (`"index.dat"`). Delivery is matched by this
-   /// name, never by position or path; names must be unique within an
-   /// asset.
-   pub name: String,
-   /// The access kind the consumer requires for this file.
-   pub access: AccessKind,
-}
-
-impl FileRequest {
-   /// A request for one named file.
-   pub fn new(name: impl Into<String>, access: AccessKind) -> Self {
-      FileRequest {
-         name: name.into(),
-         access,
-      }
-   }
-}
-
-impl<S: Into<String>> From<(S, AccessKind)> for FileRequest {
-   /// `("model.bin", AccessKind::Random)` reads as a file request
-   /// directly — the flat spelling request call sites use.
-   fn from((name, access): (S, AccessKind)) -> Self {
-      FileRequest::new(name, access)
-   }
-}
 
 /// A delivery the consumer could not load: the payload verified and
 /// arrived intact, yet failed the consumer's own checks (a named gap,
@@ -81,9 +50,10 @@ pub struct AssetRequest {
    /// [`AssetRequest::versioned_id`], which spells out the idiom and
    /// its one rule (ids must be prefix-free).
    pub id: String,
-   /// Every file the asset must contain, each with its required
-   /// access kind.
-   pub files: Vec<FileRequest>,
+   /// The names of the files the asset must contain. Delivery is
+   /// matched by name, never by position or path; names must be
+   /// unique within the asset.
+   pub files: Vec<String>,
    /// Present when the consumer rejected this asset's previous
    /// delivery at load. A provider holding a cached copy must treat
    /// it as poisoned.
@@ -105,12 +75,9 @@ impl AssetRequest {
       format!("{base}/v{major}")
    }
 
-   /// A request for one asset, with no rejection echo. Files are
-   /// `FileRequest` values or plain `(name, AccessKind)` pairs.
-   pub fn new(
-      id: impl Into<String>,
-      files: impl IntoIterator<Item = impl Into<FileRequest>>,
-   ) -> Self {
+   /// A request for one asset, naming the files it must contain, with
+   /// no rejection echo.
+   pub fn new(id: impl Into<String>, files: impl IntoIterator<Item = impl Into<String>>) -> Self {
       AssetRequest {
          id: id.into(),
          files: files.into_iter().map(Into::into).collect(),

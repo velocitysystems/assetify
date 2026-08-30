@@ -10,7 +10,7 @@
 use std::io::Read as _;
 use std::path::PathBuf;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, Provider};
+use assetify::{AssetRequest, AssetResponse, Assetify, Provider};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 
@@ -33,40 +33,37 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
    let request = AssetRequest::new(
       "tokenizer/en",
       [
-         ("meta.json", AccessKind::Stream),
-         ("index.dat", AccessKind::Random),
-         ("vocab.txt", AccessKind::AssetPath),
+         "meta.json",
+         "index.dat",
+         "vocab.txt",
       ],
    );
 
-   let mut asset = match engine.asset(request).await {
+   let asset = match engine.asset(request).await {
       AssetResponse::Available { asset } => asset,
       AssetResponse::Unavailable { reason } => return Ok(json!({ "unavailable": reason })),
    };
 
    // Stream: one forward parse of the model card.
-   let mut stream = asset
-      .take_stream("meta.json")
-      .expect("requested as a stream");
    let mut card = String::new();
-   stream.read_to_string(&mut card)?;
+   asset
+      .file("meta.json")
+      .unwrap()
+      .stream()?
+      .read_to_string(&mut card)?;
    let meta: Value = serde_json::from_str(&card)?;
    let language = meta["language"].as_str().unwrap_or("unknown").to_string();
    let declared = meta["vocabSize"].as_u64().unwrap_or(0) as u32;
 
-   // AssetPath: read the vocabulary by real path, the way a tokenizer
+   // Path: read the vocabulary by real path, the way a tokenizer
    // library opening its own files would.
-   let vocab_path = asset
-      .take_asset_path("vocab.txt")
-      .expect("requested as a path");
-   let vocab = std::fs::read_to_string(vocab_path.as_path())?;
+   let vocab_path = asset.file("vocab.txt").unwrap().path().expect("a filesystem path");
+   let vocab = std::fs::read_to_string(vocab_path)?;
    let vocab_words = vocab.lines().count() as u32;
 
    // Random: decode the index header, then look tokens up through it
    // — a positioned read per entry, never a scan.
-   let index = asset
-      .take_random("index.dat")
-      .expect("requested as random access");
+   let index = asset.file("index.dat").unwrap().random()?;
    let mut header = [0u8; 8];
    index.read_at_exact(0, &mut header)?;
    if &header[0..4] != b"AIDX" {

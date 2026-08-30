@@ -7,9 +7,7 @@ use std::io::Read;
 use std::sync::Arc;
 
 use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
-use assetify::{
-   AccessKind, AssetRequest, AssetResponse, FileAccess, FileRequest, Provider, RandomAccess,
-};
+use assetify::{AssetRequest, AssetResponse, Provider, RandomAccess};
 
 const PAYLOAD: &[u8] = b"the quick brown fox jumps over the lazy dog";
 
@@ -60,28 +58,7 @@ fn provider(mode: WindowMode) -> MemoryProvider {
 }
 
 fn fixture_request() -> AssetRequest {
-   AssetRequest::new(
-      "tokenizer/en",
-      vec![
-         FileRequest::new("meta.json", AccessKind::Stream),
-         FileRequest::new("model.bin", AccessKind::Random),
-         FileRequest::new("index.dat", AccessKind::Random),
-      ],
-   )
-}
-
-#[test]
-fn materialized_path_dereferences_to_its_path() {
-   let materialized = assetify::AssetPath::new("/data/assets/index.dat");
-   assert_eq!(
-      materialized.file_name().and_then(|n| n.to_str()),
-      Some("index.dat"),
-      "Deref<Target = Path> exposes Path methods directly"
-   );
-   assert_eq!(
-      materialized.as_path(),
-      std::path::Path::new("/data/assets/index.dat")
-   );
+   AssetRequest::new("tokenizer/en", vec!["meta.json", "model.bin", "index.dat"])
 }
 
 #[tokio::test]
@@ -94,32 +71,22 @@ async fn every_window_mode_is_consumer_equivalent() {
       WindowMode::ShortReads,
    ] {
       let outcomes = provider(mode).provide(&[fixture_request()]).await;
-      let AssetResponse::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
+      let AssetResponse::Available { asset } = outcomes.into_iter().next().unwrap() else {
          panic!("fixture asset must be available under {mode:?}");
       };
 
-      // Kind checks at the boundary, before any payload work.
-      for spec in &fixture_request().files {
-         let file = asset.file(&spec.name).expect("no named gaps");
-         assert!(
-            file.access.satisfies(spec.access),
-            "kind mismatch on {:?} under {mode:?}",
-            spec.name
-         );
-      }
-
       // Stream: drained in one forward pass.
-      let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
-         unreachable!()
-      };
+      let mut stream = asset
+         .file("meta.json")
+         .expect("no named gaps")
+         .stream()
+         .unwrap();
       let mut drained = Vec::new();
       stream.read_to_end(&mut drained).unwrap();
       assert_eq!(drained, br#"{"format":1}"#);
 
       // Load-time use of Random: ranged reads in arbitrary order.
-      let FileAccess::Random(weights) = asset.take_file("model.bin").unwrap().access else {
-         unreachable!()
-      };
+      let weights = asset.file("model.bin").unwrap().random().unwrap();
       let mut high = [0u8; 4];
       weights.read_at_exact(200, &mut high).unwrap();
       assert_eq!(high, [200, 201, 202, 203]);
@@ -129,9 +96,7 @@ async fn every_window_mode_is_consumer_equivalent() {
 
       // Resident-style use of Random: identical bytes whether the
       // window is offered, declined, or trickled.
-      let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
-         unreachable!()
-      };
+      let index = asset.file("index.dat").unwrap().random().unwrap();
       assert_random_access_conformant(index.as_ref());
       let view = match index.as_bytes() {
          Some(bytes) => bytes.to_vec(),
@@ -160,12 +125,10 @@ async fn resident_access_is_shareable_across_threads() {
    let outcomes = provider(WindowMode::ShortReads)
       .provide(&[fixture_request()])
       .await;
-   let AssetResponse::Available { mut asset } = outcomes.into_iter().next().unwrap() else {
+   let AssetResponse::Available { asset } = outcomes.into_iter().next().unwrap() else {
       panic!("fixture asset must be available");
    };
-   let FileAccess::Random(index) = asset.take_file("index.dat").unwrap().access else {
-      unreachable!()
-   };
+   let index = asset.file("index.dat").unwrap().random().unwrap();
 
    // &self positioned reads from many threads at once.
    let shared: Arc<dyn RandomAccess> = Arc::from(index);
@@ -187,12 +150,9 @@ async fn resident_access_is_shareable_across_threads() {
 #[tokio::test]
 async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
    let requests = [
-      AssetRequest::new(
-         "tokenizer/en",
-         vec![FileRequest::new("missing.dat", AccessKind::Stream)],
-      ),
+      AssetRequest::new("tokenizer/en", vec!["missing.dat"]),
       fixture_request(),
-      AssetRequest::new("no/such/asset", Vec::<FileRequest>::new()),
+      AssetRequest::new("no/such/asset", Vec::<&str>::new()),
    ];
    let outcomes = provider(WindowMode::Offered).provide(&requests).await;
    assert_eq!(outcomes.len(), 3, "one outcome per request, in order");
@@ -214,17 +174,18 @@ async fn outcomes_arrive_in_request_order_and_gaps_are_named() {
 }
 
 #[tokio::test]
-async fn memory_provider_declines_materialized_paths_with_guidance() {
-   let request = AssetRequest::new(
-      "tokenizer/en",
-      vec![FileRequest::new("index.dat", AccessKind::AssetPath)],
-   );
+async fn memory_provider_delivers_but_has_no_path() {
+   let request = AssetRequest::new("tokenizer/en", vec!["index.dat"]);
    let outcomes = provider(WindowMode::Offered).provide(&[request]).await;
-   let AssetResponse::Unavailable { reason } = &outcomes[0] else {
-      panic!("MemoryProvider holds no filesystem");
+   let AssetResponse::Available { asset } = &outcomes[0] else {
+      panic!("the file is available, just not on a filesystem");
    };
+   // The file reads fine, but there is no path to hand a
+   // path-taking library — that's a filesystem-backed provider's job.
+   let file = asset.file("index.dat").unwrap();
+   assert!(file.stream().is_ok());
    assert!(
-      reason.contains("filesystem-backed"),
-      "guides the reader: {reason}"
+      file.path().is_none(),
+      "an in-memory provider has no filesystem path"
    );
 }

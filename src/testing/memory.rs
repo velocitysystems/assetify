@@ -8,7 +8,7 @@ use std::io::{self, Read};
 use std::sync::Arc;
 
 use crate::access::MemoryRandom;
-use crate::contract::access::{AccessKind, FileAccess, RandomAccess};
+use crate::contract::access::{FileBacking, RandomAccess, StreamAccess};
 use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
@@ -52,10 +52,10 @@ impl MemoryAsset {
 /// An in-memory [`Provider`]: a map of asset id → files, served
 /// straight from heap buffers.
 ///
-/// [`AccessKind::AssetPath`] requests are answered
-/// `Unavailable` — this provider holds no filesystem. Consumers
-/// testing path-based loading should use a filesystem-backed provider
-/// over a temporary directory.
+/// Its delivered files have no path ([`PreparedFile::path`] returns
+/// `None`) — this provider holds no filesystem. Consumers testing
+/// path-based loading should use a filesystem-backed provider over a
+/// temporary directory.
 pub struct MemoryProvider {
    assets: HashMap<String, MemoryAsset>,
    mode: WindowMode,
@@ -89,38 +89,46 @@ impl MemoryProvider {
       };
 
       let mut files = Vec::with_capacity(request.files.len());
-      for spec in &request.files {
-         let Some(bytes) = asset.files.get(&spec.name) else {
+      for name in &request.files {
+         let Some(bytes) = asset.files.get(name) else {
             return AssetResponse::Unavailable {
-               reason: format!("asset {:?} is missing file {:?}", request.id, spec.name),
+               reason: format!("asset {:?} is missing file {:?}", request.id, name),
             };
          };
-         let access = match spec.access {
-            AccessKind::Stream => FileAccess::Stream(Box::new(SliceReader {
+         files.push(PreparedFile::new(
+            name.clone(),
+            HeapBacking {
                bytes: Arc::clone(bytes),
-               pos: 0,
-            })),
-            AccessKind::Random => FileAccess::Random(self.random(Arc::clone(bytes))),
-            AccessKind::AssetPath => {
-               return AssetResponse::Unavailable {
-                  reason: format!(
-                     "MemoryProvider cannot materialize a path for {:?}; \
-                      use a filesystem-backed provider",
-                     spec.name
-                  ),
-               };
-            }
-         };
-         files.push(PreparedFile::new(spec.name.clone(), access));
+               mode: self.mode,
+            },
+         ));
       }
 
       AssetResponse::Available {
          asset: PreparedAsset::new(files),
       }
    }
+}
 
-   fn random(&self, bytes: Arc<Vec<u8>>) -> Box<dyn RandomAccess> {
-      match self.mode {
+/// A [`FileBacking`] over heap bytes: no path, a slice reader for the
+/// stream, and a positioned backing whose window behavior the
+/// [`WindowMode`] controls.
+struct HeapBacking {
+   bytes: Arc<Vec<u8>>,
+   mode: WindowMode,
+}
+
+impl FileBacking for HeapBacking {
+   fn open_stream(&self) -> io::Result<StreamAccess> {
+      Ok(Box::new(SliceReader {
+         bytes: Arc::clone(&self.bytes),
+         pos: 0,
+      }))
+   }
+
+   fn open_random(&self) -> io::Result<Box<dyn RandomAccess>> {
+      let bytes = Arc::clone(&self.bytes);
+      Ok(match self.mode {
          WindowMode::Offered => Box::new(MemoryRandom::from_shared(bytes)),
          WindowMode::Declined => Box::new(NoWindow {
             inner: MemoryRandom::from_shared(bytes),
@@ -130,7 +138,7 @@ impl MemoryProvider {
             inner: MemoryRandom::from_shared(bytes),
             trickle: true,
          }),
-      }
+      })
    }
 }
 

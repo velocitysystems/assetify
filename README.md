@@ -39,8 +39,7 @@ assetify = { git = "https://github.com/velocitysystems/assetify", features = ["r
 
 ```rust
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, Provider,
-   StaticResolver,
+   AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, Provider, StaticResolver,
 };
 ```
 
@@ -67,14 +66,11 @@ let engine = Assetify::builder("/var/cache/my-app/assets")
    .build()?;
 ```
 
-**3. Ask for the asset**, naming the files you need and how you'll read them:
+**3. Ask for the asset**, naming the files you need:
 
 ```rust
 let outcome = engine
-   .asset(AssetRequest::new(
-      "tokenizer/en",
-      [("model.bin", AccessKind::Random)],
-   ))
+   .asset(AssetRequest::new("tokenizer/en", ["model.bin"]))
    .await;
 
 match outcome {
@@ -97,50 +93,35 @@ serving from disk: the revision is cached under
 
 ## Usage
 
-### Choosing an access kind
-
-Declare how you'll *read* each file; assetify picks the backing. First match
-wins:
-
-| You are… | Declare |
-|---|---|
-| Loading through a library that takes a filesystem path | `AccessKind::AssetPath` |
-| Seeking, reading byte ranges, or probing the file in place | `AccessKind::Random` |
-| Anything else (one forward parse) | `AccessKind::Stream` |
-
-Don't care? `AccessKind::AssetPath` for everything is legal and gives you plain
-paths.
-
 ### Reading delivered files
 
-Files come back by name. You know the kind you asked for, so take it
-directly:
+Files come back by name; read each one whichever way suits it, at read time —
+no need to declare a mode up front. A mode the provider can't serve reports
+it: an in-memory provider's `path()` is `None`.
 
 ```rust
 use std::io::Read;
 
-let mut asset = /* AssetResponse::Available { asset } */;
+let asset = /* AssetResponse::Available { asset } */;
+let file = asset.file("index.dat").expect("requested files are delivered");
 
 // Stream: one forward parse — config, metadata, vocabularies.
-let mut stream = asset.take_stream("meta.json").expect("requested as a stream");
 let mut meta = String::new();
-stream.read_to_string(&mut meta)?;
+asset.file("meta.json").unwrap().stream()?.read_to_string(&mut meta)?;
 
 // Random: positioned reads from any thread, plus a zero-copy window
 // when the backing offers one (mmap does).
-let index = asset.take_random("index.dat").expect("requested as random access");
+let index = file.random()?;
 let mut header = [0u8; 16];
 index.read_at_exact(0, &mut header)?;
 if let Some(bytes) = index.as_bytes() { /* the whole file, zero-copy */ }
 
-// AssetPath: a real, stable path — for libraries that insist on
-// opening files themselves.
-let path = asset.take_asset_path("rules.txt").expect("requested as a path");
-some_library::load_from(&*path)?;
+// Path: a real, stable path — for libraries that insist on opening
+// files themselves. `None` when the provider holds no filesystem.
+if let Some(path) = asset.file("rules.txt").unwrap().path() {
+   some_library::load_from(path)?;
+}
 ```
-
-To handle any kind generically, match `take_file(name)`'s `FileAccess`
-(`Stream`, `Random`, or `AssetPath`) instead.
 
 ### Static vs. dynamic resolvers
 
@@ -379,8 +360,8 @@ tracing_subscriber::fmt().init();
 Per request: validate the id and file names (they become paths — traversal is
 rejected outright) → ask the resolver where bytes live → serve the named
 revision from cache if present, otherwise fetch every file into staging,
-verify every digest, and atomically rename the complete set into place → open
-each requested file behind its declared access kind.
+verify every digest, and atomically rename the complete set into place →
+locate each requested file by name for the consumer to read.
 
 Two properties fall out of the layout. The **id is the compatibility
 boundary** — fallback only ever picks among one asset's own revisions. This

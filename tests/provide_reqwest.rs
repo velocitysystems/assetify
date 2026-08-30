@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileRequest, FileSource,
-   Locator, Provider, StaticResolver,
+   AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, Locator, Provider,
+   StaticResolver,
 };
 use sha2::Digest as _;
 use wiremock::matchers::{method, path};
@@ -48,13 +48,7 @@ async fn mount(server: &MockServer, revision: &str, name: &str, bytes: &[u8], hi
 }
 
 fn request() -> AssetRequest {
-   AssetRequest::new(
-      "models/sentiment",
-      vec![
-         FileRequest::new("model.bin", AccessKind::Random),
-         FileRequest::new("labels.txt", AccessKind::Stream),
-      ],
-   )
+   AssetRequest::new("models/sentiment", vec!["model.bin", "labels.txt"])
 }
 
 fn unwrap_available(outcome: AssetResponse) -> assetify::PreparedAsset {
@@ -169,10 +163,7 @@ async fn server_errors_fall_back_to_the_cached_revision() {
    // carries the acquisition failure.
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "models/other",
-            vec![FileRequest::new("model.bin", AccessKind::Random)],
-         ))
+         .asset(AssetRequest::new("models/other", vec!["model.bin"]))
          .await,
    );
    assert!(reason.contains("nothing servable"), "{reason}");

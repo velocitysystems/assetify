@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileRequest,
-   FileSource, Locator, Provider, RejectedDelivery, ResolveError, Resolver, StaticResolver,
+   AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, Locator, Provider,
+   RejectedDelivery, ResolveError, Resolver, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -25,14 +25,7 @@ fn file_source(dir: &Path, name: &str, bytes: &[u8]) -> FileSource {
 }
 
 fn tokenizer_request() -> AssetRequest {
-   AssetRequest::new(
-      "tokenizer/en",
-      vec![
-         FileRequest::new("meta.json", AccessKind::Stream),
-         FileRequest::new("index.dat", AccessKind::Random),
-         FileRequest::new("rules.txt", AccessKind::AssetPath),
-      ],
-   )
+   AssetRequest::new("tokenizer/en", vec!["meta.json", "index.dat", "rules.txt"])
 }
 
 fn tokenizer_source(remote: &Path, revision: &str) -> AssetSource {
@@ -73,26 +66,26 @@ async fn acquires_verifies_places_and_serves_every_access_kind() {
       .build()
       .unwrap();
 
-   let mut asset = unwrap_available(engine.asset(tokenizer_request()).await);
+   let asset = unwrap_available(engine.asset(tokenizer_request()).await);
 
-   let FileAccess::Stream(mut stream) = asset.take_file("meta.json").unwrap().access else {
-      panic!("stream kind delivers a stream");
-   };
+   // Read each delivered file in a different shape.
    let mut drained = String::new();
-   stream.read_to_string(&mut drained).unwrap();
+   asset
+      .file("meta.json")
+      .unwrap()
+      .stream()
+      .unwrap()
+      .read_to_string(&mut drained)
+      .unwrap();
    assert_eq!(drained, r#"{"format":4}"#);
 
-   let FileAccess::Random(random) = asset.take_file("index.dat").unwrap().access else {
-      panic!("random kind delivers positioned access");
-   };
+   let random = asset.file("index.dat").unwrap().random().unwrap();
    let mut word = [0u8; 5];
    random.read_at_exact(11, &mut word).unwrap();
    assert_eq!(&word, b"bytes");
 
-   let FileAccess::AssetPath(path) = asset.take_file("rules.txt").unwrap().access else {
-      panic!("materialized kind delivers a path");
-   };
-   assert_eq!(std::fs::read(&*path).unwrap(), b"rule one");
+   let path = asset.file("rules.txt").unwrap().path().unwrap();
+   assert_eq!(std::fs::read(path).unwrap(), b"rule one");
 
    // The cache now holds the placed revision.
    assert!(
@@ -121,10 +114,7 @@ async fn cache_only_mode_serves_a_preseeded_root() {
 
    let missing = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "models/sentiment",
-            Vec::<FileRequest>::new(),
-         ))
+         .asset(AssetRequest::new("models/sentiment", Vec::<&str>::new()))
          .await,
    );
    assert!(missing.contains("cache-only"), "{missing}");
@@ -166,10 +156,7 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
    // both the failure and the nothing-servable fact.
    let reason = unwrap_unavailable(
       offline
-         .asset(AssetRequest::new(
-            "models/sentiment",
-            vec![FileRequest::new("model.bin", AccessKind::Random)],
-         ))
+         .asset(AssetRequest::new("models/sentiment", vec!["model.bin"]))
          .await,
    );
    assert!(reason.contains("resolution failed"), "{reason}");
@@ -382,10 +369,7 @@ async fn one_provide_acquires_distinct_assets_concurrently_in_request_order() {
    let outcomes = engine
       .provide(&[
          tokenizer_request(),
-         AssetRequest::new(
-            "models/sentiment",
-            vec![FileRequest::new("labels.txt", AccessKind::Stream)],
-         ),
+         AssetRequest::new("models/sentiment", vec!["labels.txt"]),
          tokenizer_request(),
       ])
       .await;
@@ -393,12 +377,12 @@ async fn one_provide_acquires_distinct_assets_concurrently_in_request_order() {
    // Order-preserving: each outcome matches its request's files.
    assert_eq!(outcomes.len(), 3);
    let mut outcomes = outcomes.into_iter();
-   let mut first = unwrap_available(outcomes.next().unwrap());
-   assert!(first.take_file("index.dat").is_some());
-   let mut second = unwrap_available(outcomes.next().unwrap());
-   assert!(second.take_file("labels.txt").is_some());
-   let mut third = unwrap_available(outcomes.next().unwrap());
-   assert!(third.take_file("index.dat").is_some());
+   let first = unwrap_available(outcomes.next().unwrap());
+   assert!(first.file("index.dat").is_some());
+   let second = unwrap_available(outcomes.next().unwrap());
+   assert!(second.file("labels.txt").is_some());
+   let third = unwrap_available(outcomes.next().unwrap());
+   assert!(third.file("index.dat").is_some());
 
    // The duplicate id coalesced onto one acquisition: its second
    // request either waited on the same flight or hit the cache, and
@@ -451,14 +435,14 @@ async fn materialized_paths_stay_valid_after_the_delivery_is_dropped() {
       .build()
       .unwrap();
 
-   let path: PathBuf = {
-      let mut asset = unwrap_available(engine.asset(tokenizer_request()).await);
-      let FileAccess::AssetPath(materialized) = asset.take_file("rules.txt").unwrap().access else {
-         panic!("materialized kind delivers a path");
-      };
-      materialized.into_path_buf()
-      // `asset` (the rest of the delivery) drops here.
-   };
+   // The owned path outlives the delivery `asset`, which is dropped
+   // at the end of this statement.
+   let path: PathBuf = unwrap_available(engine.asset(tokenizer_request()).await)
+      .file("rules.txt")
+      .unwrap()
+      .path()
+      .unwrap()
+      .to_path_buf();
    assert_eq!(
       std::fs::read(&path).unwrap(),
       b"rule one",
@@ -478,10 +462,7 @@ async fn duplicate_file_names_in_a_revision_are_a_delivery_error() {
    let engine = Assetify::builder(cache.path()).build().unwrap();
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "dicts/spellcheck-de",
-            vec![FileRequest::new("words.dat", AccessKind::Random)],
-         ))
+         .asset(AssetRequest::new("dicts/spellcheck-de", vec!["words.dat"]))
          .await,
    );
    assert!(reason.contains("ambiguous"), "{reason}");
@@ -507,10 +488,7 @@ async fn acquisition_is_all_or_nothing() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "tokenizer/en",
-            vec![FileRequest::new("meta.json", AccessKind::Stream)],
-         ))
+         .asset(AssetRequest::new("tokenizer/en", vec!["meta.json"]))
          .await,
    );
    assert!(reason.contains("digest mismatch"), "{reason}");
@@ -544,10 +522,7 @@ async fn http_sources_explain_the_missing_feature() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "models/sentiment",
-            vec![FileRequest::new("model.bin", AccessKind::Random)],
-         ))
+         .asset(AssetRequest::new("models/sentiment", vec!["model.bin"]))
          .await,
    );
    assert!(reason.contains("`reqwest` feature"), "{reason}");
@@ -573,10 +548,7 @@ async fn archive_sources_explain_the_missing_feature() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "tokenizer/en",
-            vec![FileRequest::new("meta.json", AccessKind::Stream)],
-         ))
+         .asset(AssetRequest::new("tokenizer/en", vec!["meta.json"]))
          .await,
    );
    assert!(reason.contains("`zip` feature"), "{reason}");
@@ -589,7 +561,7 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
 
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new("../escape", Vec::<FileRequest>::new()))
+         .asset(AssetRequest::new("../escape", Vec::<&str>::new()))
          .await,
    );
    assert!(reason.contains("invalid"), "{reason}");
@@ -598,7 +570,7 @@ async fn invalid_ids_and_names_never_touch_the_filesystem() {
       engine
          .asset(AssetRequest::new(
             "models/sentiment",
-            vec![FileRequest::new("../../etc/passwd", AccessKind::Stream)],
+            vec!["../../etc/passwd"],
          ))
          .await,
    );
@@ -652,17 +624,16 @@ async fn a_custom_fetcher_supplies_locator_bytes() {
       .build()
       .unwrap();
 
-   let mut asset = unwrap_available(
+   let asset = unwrap_available(
       engine
-         .asset(AssetRequest::new(
-            "tokenizer/en",
-            [("meta.json", AccessKind::Stream)],
-         ))
+         .asset(AssetRequest::new("tokenizer/en", ["meta.json"]))
          .await,
    );
    let mut meta = String::new();
    asset
-      .take_stream("meta.json")
+      .file("meta.json")
+      .unwrap()
+      .stream()
       .unwrap()
       .read_to_string(&mut meta)
       .unwrap();
@@ -689,10 +660,7 @@ async fn a_custom_fetcher_supplies_locator_bytes() {
       .unwrap();
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "models/other",
-            [("model.bin", AccessKind::Stream)],
-         ))
+         .asset(AssetRequest::new("models/other", ["model.bin"]))
          .await,
    );
    assert!(reason.contains("digest mismatch"), "{reason}");
@@ -759,10 +727,7 @@ async fn a_path_writing_fetcher_is_verified_by_the_engine() {
       .unwrap();
    unwrap_available(
       engine
-         .asset(AssetRequest::new(
-            "tokenizer/en",
-            [("model.bin", AccessKind::Random)],
-         ))
+         .asset(AssetRequest::new("tokenizer/en", ["model.bin"]))
          .await,
    );
 
@@ -787,10 +752,7 @@ async fn a_path_writing_fetcher_is_verified_by_the_engine() {
       .unwrap();
    let reason = unwrap_unavailable(
       engine
-         .asset(AssetRequest::new(
-            "models/other",
-            [("model.bin", AccessKind::Stream)],
-         ))
+         .asset(AssetRequest::new("models/other", ["model.bin"]))
          .await,
    );
    assert!(reason.contains("digest mismatch"), "{reason}");

@@ -7,8 +7,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use assetify::{
-   AccessKind, ArchiveFormat, AssetRequest, AssetResponse, AssetSource, Assetify, Digest,
-   FileSource, Locator, Provider, StaticResolver,
+   ArchiveFormat, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, Locator,
+   Provider, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -56,25 +56,24 @@ async fn an_archive_becomes_the_revision_and_serves_by_name() {
    let outcome = engine
       .asset(AssetRequest::new(
          "tokenizer/en",
-         [
-            ("meta.json", AccessKind::Stream),
-            ("model.bin", AccessKind::Random),
-         ],
+         ["meta.json", "model.bin"],
       ))
       .await;
 
-   let AssetResponse::Available { mut asset } = outcome else {
+   let AssetResponse::Available { asset } = outcome else {
       panic!("expected availability");
    };
    let mut meta = String::new();
    asset
-      .take_stream("meta.json")
+      .file("meta.json")
+      .unwrap()
+      .stream()
       .unwrap()
       .read_to_string(&mut meta)
       .unwrap();
    assert_eq!(meta, "{\"format\":4}");
 
-   let model = asset.take_random("model.bin").unwrap();
+   let model = asset.file("model.bin").unwrap().random().unwrap();
    let mut start = [0u8; 7];
    model.read_at_exact(0, &mut start).unwrap();
    assert_eq!(&start, b"weights");
@@ -99,10 +98,7 @@ async fn an_archive_digest_mismatch_places_nothing() {
 
    let engine = engine_over(root.path(), AssetSource::new("20260830", vec![file]));
    let outcome = engine
-      .asset(AssetRequest::new(
-         "tokenizer/en",
-         [("meta.json", AccessKind::Stream)],
-      ))
+      .asset(AssetRequest::new("tokenizer/en", ["meta.json"]))
       .await;
 
    let AssetResponse::Unavailable { reason } = outcome else {
@@ -124,10 +120,7 @@ async fn a_traversal_entry_never_escapes_the_store() {
    // Rejected or skipped — either way nothing may land outside the
    // staging directory it was extracted into.
    let _ = engine
-      .asset(AssetRequest::new(
-         "tokenizer/en",
-         [("evil.txt", AccessKind::Stream)],
-      ))
+      .asset(AssetRequest::new("tokenizer/en", ["evil.txt"]))
       .await;
 
    assert!(!root.path().join("evil.txt").exists());
@@ -158,10 +151,7 @@ async fn a_symlink_entry_makes_the_asset_unavailable_and_places_nothing() {
    let engine = engine_over(root.path(), source);
 
    let outcome = engine
-      .asset(AssetRequest::new(
-         "tokenizer/en",
-         [("model.bin", AccessKind::Random)],
-      ))
+      .asset(AssetRequest::new("tokenizer/en", ["model.bin"]))
       .await;
 
    let AssetResponse::Unavailable { .. } = outcome else {
@@ -181,10 +171,7 @@ async fn duplicate_names_across_the_extracted_tree_stay_ambiguous() {
    let engine = engine_over(root.path(), source);
 
    let outcome = engine
-      .asset(AssetRequest::new(
-         "tokenizer/en",
-         [("dup.txt", AccessKind::Stream)],
-      ))
+      .asset(AssetRequest::new("tokenizer/en", ["dup.txt"]))
       .await;
 
    let AssetResponse::Unavailable { reason } = outcome else {
@@ -220,10 +207,7 @@ async fn an_archive_entry_colliding_with_a_sibling_file_is_ambiguous() {
    let engine = engine_over(root.path(), source);
 
    let outcome = engine
-      .asset(AssetRequest::new(
-         "tokenizer/en",
-         [("shared.txt", AccessKind::Stream)],
-      ))
+      .asset(AssetRequest::new("tokenizer/en", ["shared.txt"]))
       .await;
    let AssetResponse::Unavailable { reason } = outcome else {
       panic!("a name collision must not silently deliver one copy");
@@ -242,7 +226,7 @@ async fn an_empty_archive_is_unavailable_and_never_stuck() {
    );
    let engine = engine_over(root.path(), source);
 
-   let request = || AssetRequest::new("tokenizer/en", [("meta.json", AccessKind::Stream)]);
+   let request = || AssetRequest::new("tokenizer/en", ["meta.json"]);
 
    // Nothing placed, so the asset is unavailable — and, crucially, a
    // second request reports the same rather than cache-hitting an
@@ -279,10 +263,7 @@ async fn archives_mix_with_plain_files_all_or_nothing() {
    let outcome = engine
       .asset(AssetRequest::new(
          "tokenizer/en",
-         [
-            ("model.bin", AccessKind::Random),
-            ("rules.txt", AccessKind::AssetPath),
-         ],
+         ["model.bin", "rules.txt"],
       ))
       .await;
    assert!(matches!(outcome, AssetResponse::Available { .. }));

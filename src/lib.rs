@@ -1,50 +1,36 @@
 //! Portable asset access for Rust.
 //!
-//! A consumer — typically a library embedding data files it does not
-//! ship (ML models, dictionaries, structured data) — **declares** what
-//! it needs: which assets, which files each must contain, and how each
-//! file will be read. A [`Provider`] **prepares**: acquires the bytes
-//! however its world works, and hands every file back behind an access
-//! object of the declared kind. No storage path and no revision choice
-//! crosses the seam.
-//!
-//! # Access kinds are intent, not mechanism
-//!
-//! Each requested file carries an [`AccessKind`] naming the shape it
-//! will be read in — forward ([`Stream`](AccessKind::Stream)),
-//! positioned ([`Random`](AccessKind::Random)), or by real path
-//! ([`AssetPath`](AccessKind::AssetPath)). The provider
-//! chooses the backing: heap, memory map, plain file descriptor, or a
-//! real path. See [`AccessKind`] for the first-match rule for picking
-//! one.
+//! A consumer — usually a library embedding data it does not ship (ML
+//! models, dictionaries, structured data) — **declares** which assets
+//! and files it needs; a [`Provider`] **prepares** them, acquiring the
+//! bytes however its world works. Each [`PreparedFile`] is read in
+//! whichever shape suits: a forward [`stream`](PreparedFile::stream),
+//! positioned [`random`](PreparedFile::random) access, or its real
+//! [`path`](PreparedFile::path) when the provider has one on disk. The
+//! consumer picks the mode at read time; a mode the provider cannot
+//! serve reports it (an in-memory provider's `path` is `None`). No
+//! storage location and no revision choice crosses the seam.
 //!
 //! # The window contract
 //!
-//! [`RandomAccess`] has one required read operation and one optional
-//! accelerator: [`read_at`](RandomAccess::read_at) is the correctness
-//! floor every backing can serve, and
-//! [`as_bytes`](RandomAccess::as_bytes) is a zero-copy window a
-//! backing *may* offer when it already keeps the whole file
-//! addressable. Returning `None` is always correct, so consumers must
-//! run — if slower — on `read_at` alone. This is what lets the backing
-//! decision (and its memory-accounting consequences) stay with the
-//! provider.
+//! [`RandomAccess`] requires only [`read_at`](RandomAccess::read_at);
+//! [`as_bytes`](RandomAccess::as_bytes) is an optional zero-copy
+//! window a backing may offer when it keeps the whole file
+//! addressable. `None` is always correct, so consumers run — if
+//! slower — on `read_at` alone. That is what lets the backing choice,
+//! and its memory cost, stay with the provider.
 //!
 //! # Degraded operation
 //!
-//! A missing asset is never an error. [`AssetResponse::Unavailable`]
-//! degrades one capability; the consumer keeps running at whatever
-//! level its loaded assets allow, and a later request retries. A
-//! delivery the consumer *could not load* is echoed back as a
-//! [`RejectedDelivery`] so a cached copy is re-acquired rather than
-//! re-served.
+//! A missing asset is never an error: [`AssetResponse::Unavailable`]
+//! degrades one capability and a later request retries. A delivery the
+//! consumer *could not load* is echoed back as a [`RejectedDelivery`]
+//! so the cached copy is re-acquired rather than re-served.
 //!
 //! # Quick start
 //!
 //! ```no_run
-//! use assetify::{
-//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, Provider, StaticResolver,
-//! };
+//! use assetify::{AssetRequest, AssetSource, Assetify, FileSource, Provider, StaticResolver};
 //!
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
 //! let source = AssetSource::new(
@@ -60,58 +46,40 @@
 //!    .resolver(StaticResolver::new([("tokenizer/en", source)]))
 //!    .build()?;
 //!
-//! let outcome = engine
-//!    .asset(AssetRequest::new(
-//!       "tokenizer/en",
-//!       [("model.bin", AccessKind::Random)],
-//!    ))
-//!    .await;
+//! let outcome = engine.asset(AssetRequest::new("tokenizer/en", ["model.bin"])).await;
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! Omit the resolver for **cache-only mode**: the engine serves what
-//! the root already holds (a read-only root is fine — assets bundled
-//! into a deployment are served in place).
+//! Omit the resolver for **cache-only mode** — the engine serves what
+//! the root already holds (a read-only bundle is fine).
 //!
 //! # Versioning: the id is the compatibility boundary
 //!
-//! Every revision under one id must stay readable by the consumers
-//! that request it — offline fallback picks the newest verified
-//! revision on disk for that id, so an offline device keeps working
-//! on what it has rather than refusing service over staleness. If
-//! your payload format can change incompatibly, encode the format's
-//! major version in the id (`"tokenizer/en/v2"`, composed by
-//! [`AssetRequest::versioned_id`]): incompatible payloads are then
-//! simply different assets with disjoint revision trees, and old
-//! application builds keep requesting — and serving — the id they
-//! understand. One rule keeps the idiom sound: ids must be
-//! prefix-free — never use an id that is a path-prefix of another
-//! (`a/b` alongside `a/b/v2` makes `v2` look like a revision of
-//! `a/b`).
+//! Offline fallback serves the newest revision on disk for an id, so
+//! an offline device keeps working. If your payload format can change
+//! incompatibly, put its major version in the id (`"tokenizer/en/v2"`,
+//! via [`AssetRequest::versioned_id`]): incompatible payloads become
+//! different assets with disjoint revision trees. Keep ids prefix-free
+//! — never use an id that is a path-prefix of another.
 //!
 //! # Embedding
 //!
-//! **Serverless (read-only filesystems):** point the cache root at
-//! the writable scratch area (`/tmp` on AWS Lambda) with the
-//! `reqwest` feature, or bundle assets into the deployment and run
-//! cache-only over the bundle directory.
+//! **Serverless:** point the cache root at writable scratch (`/tmp` on
+//! AWS Lambda) with the `reqwest` feature, or bundle assets and run
+//! cache-only over them.
 //!
-//! **Node.js (napi-rs):** assetify is a plain library on tokio; call
-//! it from `#[napi]` async functions. Access objects stay on the Rust
-//! side — only serializable results cross the JS bridge. Expose
-//! long-running probing (memory-mapped `Random` files) through
-//! *async* exports so page faults never stall the event loop, and
-//! prefer an explicit `dispose()` on wrapper objects over relying on
-//! the JS garbage collector to drop Rust resources.
+//! **Node.js (napi-rs):** call it from `#[napi]` async functions; read
+//! objects stay in Rust, only results cross the JS bridge. Expose
+//! memory-mapped reads through *async* exports so page faults never
+//! stall the event loop.
 //!
 //! # Testing consumers
 //!
-//! Enable the `test-util` feature for
-//! [`testing::MemoryProvider`] — an in-memory [`Provider`] that serves
-//! declared files from heap buffers under a switchable
+//! The `test-util` feature ships [`testing::MemoryProvider`], an
+//! in-memory [`Provider`] with a switchable
 //! [`WindowMode`](testing::WindowMode), so consumer code can prove it
-//! behaves identically whether or not a backing offers the window.
+//! behaves the same whether or not a backing offers the window.
 
 mod access;
 mod contract;
@@ -124,8 +92,8 @@ mod store;
 pub mod testing;
 
 pub use contract::{
-   AccessKind, AssetPath, AssetRequest, AssetResponse, DeliveryReceipt, FileAccess, FileRequest,
-   PreparedAsset, PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
+   AssetRequest, AssetResponse, DeliveryReceipt, FileBacking, PreparedAsset, PreparedFile,
+   Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};
 pub use engine::{Assetify, AssetifyBuilder};

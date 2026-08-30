@@ -1,26 +1,95 @@
 //! The delivery side: what comes back for each requested asset.
 
-use crate::contract::access::{AssetPath, FileAccess, RandomAccess, StreamAccess};
+use std::io;
+use std::path::{Path, PathBuf};
 
-/// One delivered file, matched to the request by name.
-#[derive(Debug)]
-#[non_exhaustive]
+use crate::contract::access::{FileBacking, RandomAccess, StreamAccess};
+
+/// One delivered file, matched to the request by name. Read it in
+/// whichever shape you need — as a forward [`stream`](PreparedFile::stream),
+/// as positioned [`random`](PreparedFile::random) access, or by its
+/// real [`path`](PreparedFile::path) when the provider has one on
+/// disk. A mode a provider cannot serve reports it rather than
+/// guessing: `path` returns `None`, the openers return an error.
 pub struct PreparedFile {
-   /// The name as the request's [`FileRequest`](crate::FileRequest) listed
-   /// it. A partial or reordered delivery fails loudly as a named
-   /// gap.
-   pub name: String,
-   /// The access object, of the kind the spec declared. A kind
-   /// mismatch is a rejection at load.
-   pub access: FileAccess,
+   name: String,
+   backing: Box<dyn FileBacking>,
 }
 
 impl PreparedFile {
-   /// One named file behind its access object.
-   pub fn new(name: impl Into<String>, access: FileAccess) -> Self {
+   /// One named file behind a provider-supplied backing.
+   pub fn new(name: impl Into<String>, backing: impl FileBacking + 'static) -> Self {
       PreparedFile {
          name: name.into(),
-         access,
+         backing: Box::new(backing),
+      }
+   }
+
+   /// One named file served from a real path on disk — the common
+   /// case. Reads as a stream or positioned access open the file on
+   /// demand, and [`path`](PreparedFile::path) returns it.
+   pub fn from_path(name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+      PreparedFile::new(name, PathBacking { path: path.into() })
+   }
+
+   /// The name the request asked for.
+   pub fn name(&self) -> &str {
+      &self.name
+   }
+
+   /// A real filesystem path, when the provider has one on disk. The
+   /// path stays valid while this delivery is held. `None` for a
+   /// provider serving from memory.
+   pub fn path(&self) -> Option<&Path> {
+      self.backing.path()
+   }
+
+   /// Open a forward reader over the file.
+   pub fn stream(&self) -> io::Result<StreamAccess> {
+      self.backing.open_stream()
+   }
+
+   /// Open positioned access over the file, with the zero-copy window
+   /// when the backing offers one (see [`RandomAccess::as_bytes`]).
+   pub fn random(&self) -> io::Result<Box<dyn RandomAccess>> {
+      self.backing.open_random()
+   }
+}
+
+impl std::fmt::Debug for PreparedFile {
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      f.debug_struct("PreparedFile")
+         .field("name", &self.name)
+         .field("path", &self.backing.path())
+         .finish()
+   }
+}
+
+/// The filesystem backing behind [`PreparedFile::from_path`]: opens
+/// the file on demand, choosing the memory-mapped positioned backing
+/// when the `mmap` feature is on and a plain file descriptor
+/// otherwise.
+struct PathBacking {
+   path: PathBuf,
+}
+
+impl FileBacking for PathBacking {
+   fn path(&self) -> Option<&Path> {
+      Some(&self.path)
+   }
+
+   fn open_stream(&self) -> io::Result<StreamAccess> {
+      Ok(Box::new(std::fs::File::open(&self.path)?))
+   }
+
+   fn open_random(&self) -> io::Result<Box<dyn RandomAccess>> {
+      #[cfg(feature = "mmap")]
+      {
+         Ok(Box::new(crate::access::MmapRandom::open(&self.path)?))
+      }
+      #[cfg(not(feature = "mmap"))]
+      {
+         Ok(Box::new(crate::access::FileRandom::open(&self.path)?))
       }
    }
 }
@@ -57,18 +126,15 @@ impl DeliveryReceipt {
    }
 }
 
-/// One delivered asset: every requested file, each behind its access
-/// object.
+/// One delivered asset: every requested file, ready to read.
 ///
 /// The consumer never sees a storage location; "prepared" means the
 /// provider is ready to answer reads — not that bytes were copied
-/// anywhere in particular.
-#[derive(Debug)]
+/// anywhere in particular. Reach each file by name with
+/// [`file`](PreparedAsset::file).
 #[non_exhaustive]
 pub struct PreparedAsset {
-   /// Every file the request named for this asset.
-   pub files: Vec<PreparedFile>,
-   /// The opaque handle to this delivery, echoed back to reject it.
+   files: Vec<PreparedFile>,
    receipt: DeliveryReceipt,
 }
 
@@ -100,66 +166,20 @@ impl PreparedAsset {
    /// The delivered file with this name, if present. Absence is a
    /// named gap — the loud failure the name-matched contract is for.
    pub fn file(&self, name: &str) -> Option<&PreparedFile> {
-      self.files.iter().find(|f| f.name == name)
+      self.files.iter().find(|f| f.name() == name)
    }
 
-   /// Take ownership of the named file's access object, for loaders
-   /// that consume deliveries file by file.
-   pub fn take_file(&mut self, name: &str) -> Option<PreparedFile> {
-      let i = self.files.iter().position(|f| f.name == name)?;
-      Some(self.files.swap_remove(i))
-   }
-
-   /// Take the named file as a forward reader. When the file was
-   /// requested with [`AccessKind::Stream`](crate::AccessKind::Stream),
-   /// this cannot miss — the delivered kind always matches the
-   /// requested kind. `None` means the file is absent or was requested
-   /// with a different kind (the file is consumed either way).
-   pub fn take_stream(&mut self, name: &str) -> Option<StreamAccess> {
-      match self.take_file(name)?.access {
-         FileAccess::Stream(stream) => Some(stream),
-         _ => None,
-      }
-   }
-
-   /// Take the named file as positioned access. The counterpart of
-   /// [`take_stream`](PreparedAsset::take_stream) for
-   /// [`AccessKind::Random`](crate::AccessKind::Random) files.
-   pub fn take_random(&mut self, name: &str) -> Option<Box<dyn RandomAccess>> {
-      match self.take_file(name)?.access {
-         FileAccess::Random(random) => Some(random),
-         _ => None,
-      }
-   }
-
-   /// Take the named file as a real filesystem path. The counterpart
-   /// of [`take_stream`](PreparedAsset::take_stream) for
-   /// [`AccessKind::AssetPath`](crate::AccessKind::AssetPath)
-   /// files.
-   pub fn take_asset_path(&mut self, name: &str) -> Option<AssetPath> {
-      match self.take_file(name)?.access {
-         FileAccess::AssetPath(path) => Some(path),
-         _ => None,
-      }
+   /// Every delivered file, in request order.
+   pub fn files(&self) -> &[PreparedFile] {
+      &self.files
    }
 }
 
-#[cfg(test)]
-mod tests {
-   use super::*;
-
-   #[test]
-   fn typed_accessors_match_kind_and_consume() {
-      let mut asset = PreparedAsset::new(vec![
-         PreparedFile::new("meta.json", FileAccess::Stream(Box::new(&b"{}"[..]))),
-         PreparedFile::new("rules.txt", FileAccess::AssetPath(AssetPath::new("/r"))),
-      ]);
-
-      assert!(asset.take_stream("meta.json").is_some());
-      assert!(asset.take_stream("meta.json").is_none(), "consumed");
-
-      assert!(asset.take_stream("rules.txt").is_none(), "wrong kind");
-      assert!(asset.take_random("absent.bin").is_none(), "named gap");
+impl std::fmt::Debug for PreparedAsset {
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      f.debug_struct("PreparedAsset")
+         .field("files", &self.files)
+         .finish()
    }
 }
 
@@ -167,8 +187,8 @@ mod tests {
 /// call.
 #[derive(Debug)]
 pub enum AssetResponse {
-   /// The asset is prepared and every named file is readable behind
-   /// its access object. The consumer still validates content against
+   /// The asset is prepared and every named file is readable. The
+   /// consumer still validates content against
    /// its own format checks; a failed load is echoed back as a
    /// [`RejectedDelivery`](crate::RejectedDelivery) on the next
    /// request.

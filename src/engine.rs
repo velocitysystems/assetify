@@ -14,7 +14,7 @@
 //!    or acquisition failure, fall back to the newest serviceable
 //!    revision already on disk.
 //! 4. **Serve**: locate each requested file by unique name and open
-//!    the backing its declared [`AccessKind`] deserves.
+//!    each requested file for reading.
 //!
 //! A missing asset is a degraded capability, never an error: every
 //! failure lands as [`AssetResponse::Unavailable`] with a reason, and
@@ -25,11 +25,6 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-#[cfg(not(feature = "mmap"))]
-use crate::access::FileRandom;
-#[cfg(feature = "mmap")]
-use crate::access::MmapRandom;
-use crate::contract::access::{AccessKind, AssetPath, FileAccess};
 use crate::contract::delivery::{AssetResponse, DeliveryReceipt, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
 use crate::contract::request::{AssetRequest, RejectedDelivery};
@@ -82,8 +77,8 @@ impl Assetify {
 
    async fn try_prepare(&self, request: &AssetRequest) -> Result<PreparedAsset, String> {
       layout::validate_id(&request.id)?;
-      for spec in &request.files {
-         layout::validate_file_name(&spec.name)?;
+      for name in &request.files {
+         layout::validate_file_name(name)?;
       }
 
       let slot = request.id.clone();
@@ -108,7 +103,7 @@ impl Assetify {
       tracing::info!(
          asset = %request.id,
          revision = %revision,
-         files = asset.files.len(),
+         files = asset.files().len(),
          "delivered"
       );
       Ok(asset)
@@ -337,11 +332,9 @@ impl Assetify {
    /// backing its declared kind deserves.
    fn serve(&self, request: &AssetRequest, revision_dir: &Path) -> Result<PreparedAsset, String> {
       let mut files = Vec::with_capacity(request.files.len());
-      for spec in &request.files {
-         let path = self.store.find_file(revision_dir, &spec.name)?;
-         let access = open_backing(&path, spec.access)
-            .map_err(|e| format!("cannot open {:?}: {e}", spec.name))?;
-         files.push(PreparedFile::new(spec.name.clone(), access));
+      for name in &request.files {
+         let path = self.store.find_file(revision_dir, name)?;
+         files.push(PreparedFile::from_path(name.clone(), path));
       }
       Ok(PreparedAsset::new(files))
    }
@@ -420,18 +413,6 @@ impl Provider for Assetify {
       // duplicates onto one acquisition.
       futures_util::future::join_all(requests.iter().map(|request| self.prepare_one(request))).await
    }
-}
-
-/// The backing each access kind deserves, over a served file.
-fn open_backing(path: &Path, kind: AccessKind) -> std::io::Result<FileAccess> {
-   Ok(match kind {
-      AccessKind::Stream => FileAccess::Stream(Box::new(std::fs::File::open(path)?)),
-      #[cfg(feature = "mmap")]
-      AccessKind::Random => FileAccess::Random(Box::new(MmapRandom::open(path)?)),
-      #[cfg(not(feature = "mmap"))]
-      AccessKind::Random => FileAccess::Random(Box::new(FileRandom::open(path)?)),
-      AccessKind::AssetPath => FileAccess::AssetPath(AssetPath::new(path)),
-   })
 }
 
 /// Builds an [`Assetify`].
@@ -526,10 +507,7 @@ mod tests {
       let engine = Assetify::builder(cache.path()).build().unwrap();
       for _ in 0..2 {
          let outcome = engine
-            .asset(AssetRequest::new(
-               "tokenizer/en",
-               [("meta.json", AccessKind::Stream)],
-            ))
+            .asset(AssetRequest::new("tokenizer/en", ["meta.json"]))
             .await;
          assert!(matches!(outcome, AssetResponse::Available { .. }));
       }
