@@ -6,7 +6,6 @@
 use std::io::Read;
 use std::sync::Arc;
 
-use assetify::access::MemoryRandom;
 use assetify::testing::{MemoryAsset, MemoryProvider, WindowMode};
 use assetify::{
    AccessKind, AssetRequest, AssetResponse, FileAccess, FileRequest, Provider, RandomAccess,
@@ -14,17 +13,12 @@ use assetify::{
 
 const PAYLOAD: &[u8] = b"the quick brown fox jumps over the lazy dog";
 
-/// Every backing must pass this, regardless of how it answers
-/// `as_bytes`.
+/// Every backing a provider delivers must behave identically from the
+/// consumer's point of view, regardless of how it answers `as_bytes`.
 fn assert_random_access_conformant(access: &dyn RandomAccess) {
    let len = PAYLOAD.len() as u64;
    assert_eq!(access.len(), len);
    assert!(!access.is_empty());
-
-   // Reads past the end return zero bytes rather than erroring.
-   let mut buf = [0u8; 8];
-   assert_eq!(access.read_at(len, &mut buf).unwrap(), 0);
-   assert_eq!(access.read_at(len + 100, &mut buf).unwrap(), 0);
 
    // A read straddling the end is truncated, never padded.
    let mut whole = vec![0u8; PAYLOAD.len() + 16];
@@ -40,16 +34,11 @@ fn assert_random_access_conformant(access: &dyn RandomAccess) {
    }
    assert_eq!(&whole[..filled], PAYLOAD);
 
-   // read_at_exact assembles short reads, at any offset and in any
-   // order.
-   let mut tail = [0u8; 8];
-   access.read_at_exact(len - 8, &mut tail).unwrap();
-   assert_eq!(&tail, &PAYLOAD[PAYLOAD.len() - 8..]);
+   // read_at_exact assembles short reads and refuses ranges the file
+   // cannot fill.
    let mut head = [0u8; 9];
    access.read_at_exact(0, &mut head).unwrap();
    assert_eq!(&head, &PAYLOAD[..9]);
-
-   // read_at_exact refuses ranges the file cannot fill.
    let mut too_far = [0u8; 4];
    let err = access.read_at_exact(len - 2, &mut too_far).unwrap_err();
    assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
@@ -79,60 +68,6 @@ fn fixture_request() -> AssetRequest {
          FileRequest::new("index.dat", AccessKind::Random),
       ],
    )
-}
-
-#[test]
-fn memory_random_conforms() {
-   let backing = MemoryRandom::new(PAYLOAD.to_vec());
-   assert_random_access_conformant(&backing);
-   assert!(
-      backing.as_bytes().is_some(),
-      "heap backing offers the window"
-   );
-}
-
-#[test]
-fn file_random_conforms() {
-   let dir = tempfile::tempdir().unwrap();
-   let path = dir.path().join("payload.bin");
-   std::fs::write(&path, PAYLOAD).unwrap();
-
-   let backing = assetify::access::FileRandom::open(&path).unwrap();
-   assert_random_access_conformant(&backing);
-   assert!(
-      backing.as_bytes().is_none(),
-      "plain-file backing keeps nothing addressable"
-   );
-}
-
-#[cfg(feature = "mmap")]
-#[test]
-fn mmap_random_conforms() {
-   let dir = tempfile::tempdir().unwrap();
-   let path = dir.path().join("payload.bin");
-   std::fs::write(&path, PAYLOAD).unwrap();
-
-   let backing = assetify::access::MmapRandom::open(&path).unwrap();
-   assert_random_access_conformant(&backing);
-   assert_eq!(
-      backing.as_bytes(),
-      Some(PAYLOAD),
-      "mmap backing offers the whole file as the window"
-   );
-}
-
-#[cfg(feature = "mmap")]
-#[test]
-fn mmap_random_serves_an_empty_file() {
-   let dir = tempfile::tempdir().unwrap();
-   let path = dir.path().join("empty.bin");
-   std::fs::write(&path, b"").unwrap();
-
-   let backing = assetify::access::MmapRandom::open(&path).unwrap();
-   assert!(backing.is_empty());
-   assert_eq!(backing.as_bytes(), Some(&[][..]));
-   let mut buf = [0u8; 4];
-   assert_eq!(backing.read_at(0, &mut buf).unwrap(), 0);
 }
 
 #[test]

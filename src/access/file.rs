@@ -50,3 +50,23 @@ impl RandomAccess for FileRandom {
 
    // as_bytes: default `None`. Nothing is kept addressable.
 }
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+   use crate::access::conformance::{PAYLOAD, assert_conformant};
+
+   #[test]
+   fn plain_file_backing_conforms_without_a_window() {
+      let dir = tempfile::tempdir().unwrap();
+      let path = dir.path().join("payload.bin");
+      std::fs::write(&path, PAYLOAD).unwrap();
+
+      let backing = FileRandom::open(&path).unwrap();
+      assert_conformant(&backing);
+      assert!(
+         backing.as_bytes().is_none(),
+         "plain-file backing keeps nothing addressable"
+      );
+   }
+}

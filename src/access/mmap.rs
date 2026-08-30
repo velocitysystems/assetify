@@ -63,3 +63,37 @@ impl RandomAccess for MmapRandom {
       Some(self.bytes())
    }
 }
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+   use crate::access::conformance::{PAYLOAD, assert_conformant};
+
+   #[test]
+   fn mmap_backing_conforms_and_offers_the_window() {
+      let dir = tempfile::tempdir().unwrap();
+      let path = dir.path().join("payload.bin");
+      std::fs::write(&path, PAYLOAD).unwrap();
+
+      let backing = MmapRandom::open(&path).unwrap();
+      assert_conformant(&backing);
+      assert_eq!(
+         backing.as_bytes(),
+         Some(PAYLOAD),
+         "mmap backing offers the whole file as the window"
+      );
+   }
+
+   #[test]
+   fn mmap_serves_an_empty_file() {
+      let dir = tempfile::tempdir().unwrap();
+      let path = dir.path().join("empty.bin");
+      std::fs::write(&path, b"").unwrap();
+
+      let backing = MmapRandom::open(&path).unwrap();
+      assert!(backing.is_empty());
+      assert_eq!(backing.as_bytes(), Some(&[][..]));
+      let mut buf = [0u8; 4];
+      assert_eq!(backing.read_at(0, &mut buf).unwrap(), 0);
+   }
+}

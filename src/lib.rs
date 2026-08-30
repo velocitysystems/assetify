@@ -113,7 +113,7 @@
 //! [`WindowMode`](testing::WindowMode), so consumer code can prove it
 //! behaves identically whether or not a backing offers the window.
 
-pub mod access;
+mod access;
 mod contract;
 mod digest;
 mod engine;

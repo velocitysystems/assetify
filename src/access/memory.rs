@@ -15,15 +15,8 @@ pub struct MemoryRandom {
 }
 
 impl MemoryRandom {
-   /// Back a file with these bytes.
-   pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
-      MemoryRandom {
-         bytes: Arc::new(bytes.into()),
-      }
-   }
-
    /// Back a file with an already-shared buffer, avoiding a copy.
-   pub fn from_shared(bytes: Arc<Vec<u8>>) -> Self {
+   pub(crate) fn from_shared(bytes: Arc<Vec<u8>>) -> Self {
       MemoryRandom { bytes }
    }
 }
@@ -46,5 +39,21 @@ impl RandomAccess for MemoryRandom {
 
    fn as_bytes(&self) -> Option<&[u8]> {
       Some(&self.bytes)
+   }
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+   use crate::access::conformance::{PAYLOAD, assert_conformant};
+
+   #[test]
+   fn heap_backing_conforms_and_offers_the_window() {
+      let backing = MemoryRandom::from_shared(Arc::new(PAYLOAD.to_vec()));
+      assert_conformant(&backing);
+      assert!(
+         backing.as_bytes().is_some(),
+         "heap backing offers the window"
+      );
    }
 }
