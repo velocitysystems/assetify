@@ -287,6 +287,23 @@ impl Assetify {
              `reqwest` feature, or supply one with Assetify::builder(..).fetcher(..)"
          ));
       };
+
+      // A fetcher that owns the transfer (a native downloader) writes
+      // the file itself; the engine then verifies it by re-reading —
+      // one extra pass, off the runtime, and verification still never
+      // leaves the engine's side of the seam.
+      if fetcher.writes_to_path() {
+         fetcher
+            .fetch_to_path(url, destination)
+            .await
+            .map_err(|e| format!("cannot acquire {name:?}: {e}"))?;
+         let path = destination.to_path_buf();
+         return tokio::task::spawn_blocking(move || crate::source::fetch::hash_file(&path))
+            .await
+            .map_err(|e| format!("staging hash task failed: {e}"))?
+            .map_err(|e| format!("cannot hash staging file: {e}"));
+      }
+
       let file = std::fs::File::create(destination)
          .map_err(|e| format!("cannot create staging file: {e}"))?;
 

@@ -16,7 +16,8 @@
 //!
 //! [`Locator::Url`]: crate::Locator::Url
 
-use std::io::Write;
+use std::io::{Read, Write};
+use std::path::Path;
 
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -35,6 +36,31 @@ pub trait Fetcher: Send + Sync {
    /// the offline fallback. The built-in [`ReqwestFetcher`] sets
    /// these deadlines; a custom fetcher is responsible for its own.
    async fn fetch(&self, url: &str, sink: &mut (dyn Write + Send)) -> Result<(), FetchError>;
+
+   /// Whether this fetcher writes the file itself via
+   /// [`fetch_to_path`](Fetcher::fetch_to_path) rather than streaming
+   /// through [`fetch`](Fetcher::fetch). Override to `true` for a
+   /// fetcher that owns the transfer — a native background or
+   /// resumable downloader. Left `false`, the engine streams via
+   /// `fetch` and hashes inline, in a single pass with no re-read.
+   fn writes_to_path(&self) -> bool {
+      false
+   }
+
+   /// Write the resource at `url` to `dest`, owning the transfer.
+   /// Reached only when [`writes_to_path`](Fetcher::writes_to_path)
+   /// returns `true`; the engine then verifies the landed file by
+   /// re-reading it, so verification still stays on the engine's
+   /// side. This is the seam for handing a download to a platform's
+   /// native machinery (background transfer, resume, progress) — the
+   /// bytes never stream through the process. The default streams via
+   /// [`fetch`](Fetcher::fetch) into `dest`, a fallback for a fetcher
+   /// that opts in without overriding this.
+   async fn fetch_to_path(&self, url: &str, dest: &Path) -> Result<(), FetchError> {
+      let mut file = std::fs::File::create(dest)
+         .map_err(|e| FetchError::new(format!("cannot create {dest:?}: {e}")))?;
+      self.fetch(url, &mut file).await
+   }
 }
 
 /// A fetch failed: transport error, non-success status, or a sink
@@ -88,6 +114,24 @@ impl Write for ChannelSink {
 pub(crate) struct HashingSink<W: Write> {
    inner: W,
    hasher: Sha256,
+}
+
+/// SHA-256 a file already on disk, in one read pass. Used to verify a
+/// file a [`Fetcher::fetch_to_path`] implementation wrote itself —
+/// verification stays engine-side even when the transfer does not.
+/// Blocking; call from the blocking pool.
+pub(crate) fn hash_file(path: &Path) -> std::io::Result<[u8; 32]> {
+   let mut file = std::fs::File::open(path)?;
+   let mut hasher = Sha256::new();
+   let mut buf = [0u8; 64 * 1024];
+   loop {
+      let n = file.read(&mut buf)?;
+      if n == 0 {
+         break;
+      }
+      hasher.update(&buf[..n]);
+   }
+   Ok(hasher.finalize().into())
 }
 
 impl<W: Write> HashingSink<W> {

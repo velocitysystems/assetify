@@ -217,11 +217,12 @@ expensive, cache your own lookups inside it.
 
 ### Configuring the fetcher
 
-URL sources are retrieved through a `Fetcher`. Three rungs, each one step up
+URL sources are retrieved through a `Fetcher`. Four rungs, each one step up
 in effort:
 
 ```rust
-// 1. Nothing: the `reqwest` feature wires a default reqwest fetcher.
+// 1. Nothing: the `reqwest` feature wires a default reqwest fetcher
+//    (with connect and between-bytes timeouts already set).
 
 // 2. Configure the client — user agent, timeouts, proxies — with
 //    reqwest's own builder, and hand it over:
@@ -235,6 +236,13 @@ let engine = Assetify::builder(root)
 //    method that streams a URL's bytes into a sink). Auth headers,
 //    request signing, non-HTTP schemes — the URL is opaque to the
 //    engine, and verification always stays on the engine's side.
+
+// 4. Own the transfer: also override `writes_to_path` (→ true) and
+//    `fetch_to_path`, and the engine hands your fetcher the
+//    destination path instead of a sink — the seam for a platform's
+//    native background/resumable downloader. The engine verifies the
+//    landed file by re-reading it, so verification still never leaves
+//    its side.
 ```
 
 ### Gating acquisition

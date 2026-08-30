@@ -698,3 +698,101 @@ async fn a_custom_fetcher_supplies_locator_bytes() {
    assert!(reason.contains("digest mismatch"), "{reason}");
    assert!(!cache.path().join("models/other").exists());
 }
+
+/// A fetcher that owns the transfer: it writes the file itself (as a
+/// native background downloader would) rather than streaming through
+/// the engine's sink.
+struct PathFetcher {
+   bodies: std::collections::HashMap<String, Vec<u8>>,
+}
+
+#[async_trait::async_trait]
+impl assetify::Fetcher for PathFetcher {
+   async fn fetch(
+      &self,
+      _url: &str,
+      _sink: &mut (dyn std::io::Write + Send),
+   ) -> Result<(), assetify::FetchError> {
+      Err(assetify::FetchError::new("this fetcher writes to a path"))
+   }
+
+   fn writes_to_path(&self) -> bool {
+      true
+   }
+
+   async fn fetch_to_path(
+      &self,
+      url: &str,
+      dest: &std::path::Path,
+   ) -> Result<(), assetify::FetchError> {
+      let bytes = self
+         .bodies
+         .get(url)
+         .ok_or_else(|| assetify::FetchError::new(format!("no body for {url}")))?;
+      std::fs::write(dest, bytes).map_err(|e| assetify::FetchError::new(e.to_string()))
+   }
+}
+
+#[tokio::test]
+async fn a_path_writing_fetcher_is_verified_by_the_engine() {
+   let cache = tempfile::tempdir().unwrap();
+   let url = "native://tokenizer/model.bin";
+
+   // Happy path: the fetcher wrote the file; the engine re-read and
+   // verified it, and serves it.
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         AssetSource::new(
+            "20260821",
+            vec![FileSource::new(
+               "model.bin",
+               Locator::Url(url.to_string()),
+               sha256_of(b"weights"),
+            )],
+         ),
+      )]))
+      .fetcher(PathFetcher {
+         bodies: [(url.to_string(), b"weights".to_vec())].into(),
+      })
+      .build()
+      .unwrap();
+   unwrap_available(
+      engine
+         .asset(AssetRequest::new(
+            "tokenizer/en",
+            [("model.bin", AccessKind::Random)],
+         ))
+         .await,
+   );
+
+   // Verification still stays engine-side: a path-writing fetcher whose
+   // file misses the digest places nothing.
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "models/other",
+         AssetSource::new(
+            "r1",
+            vec![FileSource::new(
+               "model.bin",
+               Locator::Url(url.to_string()),
+               sha256_of(b"the promised bytes"),
+            )],
+         ),
+      )]))
+      .fetcher(PathFetcher {
+         bodies: [(url.to_string(), b"tampered".to_vec())].into(),
+      })
+      .build()
+      .unwrap();
+   let reason = unwrap_unavailable(
+      engine
+         .asset(AssetRequest::new(
+            "models/other",
+            [("model.bin", AccessKind::Stream)],
+         ))
+         .await,
+   );
+   assert!(reason.contains("digest mismatch"), "{reason}");
+   assert!(!cache.path().join("models/other").exists());
+}
