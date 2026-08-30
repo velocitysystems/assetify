@@ -471,7 +471,13 @@ impl AssetifyBuilder {
       let fetcher = match self.fetcher {
          Some(fetcher) => Some(fetcher),
          None => Some(Box::new(crate::source::reqwest::ReqwestFetcher::new(
+            // A connect deadline and a between-bytes read deadline, so
+            // a stalled or dribbling download fails rather than
+            // holding the asset's acquisition open forever. No total
+            // deadline: a large asset may legitimately take minutes.
             reqwest::Client::builder()
+               .connect_timeout(std::time::Duration::from_secs(30))
+               .read_timeout(std::time::Duration::from_secs(30))
                .build()
                .map_err(|source| AssetifyError::DefaultFetcher { source })?,
          )) as Box<dyn Fetcher>),
