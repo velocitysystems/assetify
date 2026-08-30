@@ -128,6 +128,9 @@ async fn a_traversal_entry_never_escapes_the_store() {
    assert!(!root.path().parent().unwrap().join("evil.txt").exists());
 }
 
+// Unix-only: on Windows an archive symlink entry is privilege-gated,
+// so the failure mode differs from the link-refusal exercised here.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_symlink_entry_makes_the_asset_unavailable_and_places_nothing() {
    let remote = tempfile::tempdir().unwrap();

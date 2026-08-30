@@ -120,6 +120,10 @@ mod tests {
       assert!(!dir.path().join("evil.txt").exists());
    }
 
+   // Symlink handling is unix-specific: on Windows, creating a link
+   // from an archive entry is privilege-gated, so the outcome depends
+   // on the platform rather than on our defense.
+   #[cfg(unix)]
    #[tokio::test]
    async fn a_symlink_entry_fails_extraction_and_is_not_left_behind() {
       let dir = tempfile::tempdir().unwrap();
