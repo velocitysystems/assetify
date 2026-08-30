@@ -59,7 +59,16 @@ fn collect_matches(dir: &Path, name: &str, matches: &mut Vec<PathBuf>) {
       if entry_name.to_string_lossy().starts_with('.') {
          continue;
       }
-      if path.is_dir() {
+      // Judge the entry itself, never its target: a symlink is never
+      // recursed into and never served, so a link planted in a
+      // revision cannot redirect a delivered file outside the store.
+      let Ok(file_type) = entry.file_type() else {
+         continue;
+      };
+      if file_type.is_symlink() {
+         continue;
+      }
+      if file_type.is_dir() {
          collect_matches(&path, name, matches);
       } else if entry_name.to_string_lossy() == name {
          matches.push(path);
@@ -144,5 +153,25 @@ mod tests {
       let revision = dir.path();
       touch(&revision.join(".poisoned"));
       assert!(find_file(revision, ".poisoned").is_err());
+   }
+
+   #[cfg(unix)]
+   #[test]
+   fn a_symlink_is_never_served_or_followed() {
+      let dir = tempfile::tempdir().unwrap();
+      let revision = dir.path();
+      // A link named like a delivered file, and a link standing in for
+      // a directory — neither may be matched or recursed into.
+      std::os::unix::fs::symlink("/etc/passwd", revision.join("model.bin")).unwrap();
+      std::os::unix::fs::symlink("/", revision.join("root")).unwrap();
+
+      assert!(
+         find_file(revision, "model.bin").is_err(),
+         "a symlink is not a deliverable file"
+      );
+      // Recursion through the directory-symlink would walk all of `/`;
+      // it must be skipped, so a real file below is still found.
+      touch(&revision.join("real/index.dat"));
+      assert!(find_file(revision, "index.dat").is_ok());
    }
 }

@@ -3,9 +3,16 @@
 //!
 //! Extraction runs *after* the digest verifies and *into* the staging
 //! directory, so atomic placement is untouched — a revision still
-//! publishes as a complete extracted tree or not at all. Entry paths
-//! are sanitized by the extractor; an entry that would escape the
-//! staging directory is never written.
+//! publishes as a complete extracted tree or not at all.
+//!
+//! The extractor sanitizes entry *names* (a `../` path cannot escape
+//! the destination), but the archive format also allows symlink
+//! entries whose *target* is arbitrary — a link the extractor writes
+//! verbatim. A later same-named file write would follow such a link
+//! out of the store, and serving would hand back the link's target.
+//! So after extraction the whole tree is checked and any symlink
+//! fails the acquisition: nothing a placed revision contains is ever
+//! a link.
 //!
 //! [`Payload::Archive`]: crate::Payload
 
@@ -22,10 +29,33 @@ pub(crate) async fn extract_zip(archive: &Path, destination: &Path) -> Result<()
       let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
          .map_err(|e| format!("read archive: {e}"))?;
       zip.extract(&destination)
-         .map_err(|e| format!("extract archive: {e}"))
+         .map_err(|e| format!("extract archive: {e}"))?;
+      reject_symlinks(&destination)
    })
    .await
    .map_err(|e| format!("extraction task failed: {e}"))?
+}
+
+/// Fail if any entry in the extracted tree is a symlink. Uses
+/// `symlink_metadata` (never follows), so a link pointing anywhere is
+/// caught rather than traversed.
+fn reject_symlinks(dir: &Path) -> Result<(), String> {
+   let entries = std::fs::read_dir(dir).map_err(|e| format!("scan extracted tree: {e}"))?;
+   for entry in entries {
+      let entry = entry.map_err(|e| format!("scan extracted tree: {e}"))?;
+      let meta = std::fs::symlink_metadata(entry.path())
+         .map_err(|e| format!("scan extracted tree: {e}"))?;
+      if meta.is_symlink() {
+         return Err(format!(
+            "archive contains a symlink entry {:?}; symlinks are not allowed",
+            entry.file_name()
+         ));
+      }
+      if meta.is_dir() {
+         reject_symlinks(&entry.path())?;
+      }
+   }
+   Ok(())
 }
 
 #[cfg(test)]
@@ -77,5 +107,34 @@ mod tests {
       // Skipped or rejected — both are fine; escaping is not.
       let _ = extract_zip(&archive, &dest).await;
       assert!(!dir.path().join("evil.txt").exists());
+   }
+
+   #[tokio::test]
+   async fn a_symlink_entry_fails_extraction_and_is_not_left_behind() {
+      let dir = tempfile::tempdir().unwrap();
+      let archive = dir.path().join("link.zip");
+      let bytes = {
+         let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+         writer
+            .add_symlink(
+               "model.bin",
+               "/etc/passwd",
+               zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+         writer.finish().unwrap().into_inner()
+      };
+      std::fs::write(&archive, bytes).unwrap();
+
+      let dest = dir.path().join("out");
+      std::fs::create_dir(&dest).unwrap();
+      // Extraction fails; the caller (which owns a staging TempDir)
+      // discards the partial tree, so nothing is ever placed.
+      let result = extract_zip(&archive, &dest).await;
+      assert!(result.is_err(), "a symlink entry must fail the extraction");
+      assert!(
+         result.unwrap_err().contains("symlink"),
+         "the reason names the symlink"
+      );
    }
 }

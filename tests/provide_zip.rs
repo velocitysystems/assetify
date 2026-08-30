@@ -135,6 +135,42 @@ async fn a_traversal_entry_never_escapes_the_store() {
 }
 
 #[tokio::test]
+async fn a_symlink_entry_makes_the_asset_unavailable_and_places_nothing() {
+   let remote = tempfile::tempdir().unwrap();
+   let root = tempfile::tempdir().unwrap();
+
+   // An archive whose one entry is a symlink pointing outside the
+   // store — the shape that could otherwise exfiltrate a file or, with
+   // a same-named sibling write, escape the cache root.
+   let bytes = {
+      let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+      writer
+         .add_symlink(
+            "model.bin",
+            "/etc/passwd",
+            zip::write::SimpleFileOptions::default(),
+         )
+         .unwrap();
+      writer.finish().unwrap().into_inner()
+   };
+   let source = AssetSource::new("20260830", vec![archive_source(remote.path(), &bytes)]);
+   let engine = engine_over(root.path(), source);
+
+   let outcome = engine
+      .asset(AssetRequest::new(
+         "tokenizer/en",
+         [("model.bin", AccessKind::Random)],
+      ))
+      .await;
+
+   let AssetResponse::Unavailable { .. } = outcome else {
+      panic!("a symlink archive entry must not deliver an asset");
+   };
+   // Nothing placed, and no symlink anywhere under the root.
+   assert!(!root.path().join("tokenizer/en/20260830").exists());
+}
+
+#[tokio::test]
 async fn duplicate_names_across_the_extracted_tree_stay_ambiguous() {
    let remote = tempfile::tempdir().unwrap();
    let root = tempfile::tempdir().unwrap();
