@@ -39,9 +39,6 @@ use crate::source::policy::{Admission, FetchPolicy};
 use crate::source::{ArchiveFormat, AssetSource, Locator, Payload, Resolver, local};
 use crate::store::{Store, layout};
 
-/// Key of one acquisition flight: one asset id.
-type Slot = String;
-
 /// The engine: a cache root, an optional resolver, and the
 /// [`Provider`] implementation over them.
 ///
@@ -62,7 +59,7 @@ pub struct Assetify {
    /// One async mutex per slot: concurrent requests for the same
    /// asset coalesce instead of racing the acquisition. Followers
    /// re-check the cache after the leader finishes and hit it.
-   flights: Mutex<HashMap<Slot, Arc<tokio::sync::Mutex<()>>>>,
+   flights: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Assetify {
@@ -230,8 +227,7 @@ impl Assetify {
             let archive_dir = staged.path().join(format!("_archive_{index}"));
             std::fs::create_dir(&archive_dir)
                .map_err(|e| format!("cannot create an extraction directory: {e}"))?;
-            self
-               .extract(format, &destination, &archive_dir)
+            extract(format, &destination, &archive_dir)
                .await
                .map_err(|e| format!("cannot extract {:?}: {e}", file.name))?;
          }
@@ -254,32 +250,6 @@ impl Assetify {
          "placed"
       );
       Ok(())
-   }
-
-   /// Extract a verified archive into the staged revision directory.
-   /// Format support is feature-gated; without the matching feature
-   /// the acquisition degrades like any other failure.
-   #[cfg(feature = "zip")]
-   async fn extract(
-      &self,
-      format: &ArchiveFormat,
-      archive: &Path,
-      destination: &Path,
-   ) -> Result<(), String> {
-      match format {
-         ArchiveFormat::Zip => crate::source::archive::extract_zip(archive, destination).await,
-      }
-   }
-
-   #[cfg(not(feature = "zip"))]
-   async fn extract(
-      &self,
-      format: &ArchiveFormat,
-      _archive: &Path,
-      _destination: &Path,
-   ) -> Result<(), String> {
-      let _ = format;
-      Err("archive payloads need the `zip` feature".to_string())
    }
 
    /// Retrieve one URL through the configured [`Fetcher`], hashing
@@ -376,13 +346,13 @@ impl Assetify {
       Ok(PreparedAsset::new(files))
    }
 
-   fn flight(&self, slot: &Slot) -> Arc<tokio::sync::Mutex<()>> {
+   fn flight(&self, slot: &str) -> Arc<tokio::sync::Mutex<()>> {
       Arc::clone(
          self
             .flights
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .entry(slot.clone())
+            .entry(slot.to_string())
             .or_default(),
       )
    }
@@ -420,6 +390,26 @@ impl Assetify {
       );
       self.store.poison_revision(id, revision, &rejected.reason);
    }
+}
+
+/// Extract a verified archive into `destination`. Format support is
+/// feature-gated; without the matching feature the acquisition
+/// degrades like any other failure.
+#[cfg(feature = "zip")]
+async fn extract(format: &ArchiveFormat, archive: &Path, destination: &Path) -> Result<(), String> {
+   match format {
+      ArchiveFormat::Zip => crate::source::archive::extract_zip(archive, destination).await,
+   }
+}
+
+#[cfg(not(feature = "zip"))]
+async fn extract(
+   format: &ArchiveFormat,
+   _archive: &Path,
+   _destination: &Path,
+) -> Result<(), String> {
+   let _ = format;
+   Err("archive payloads need the `zip` feature".to_string())
 }
 
 #[async_trait::async_trait]
