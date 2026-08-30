@@ -111,7 +111,13 @@ fn sync_tree(dir: &Path) -> io::Result<()> {
       if file_type.is_dir() {
          sync_tree(&entry.path())?;
       } else if file_type.is_file() {
-         std::fs::File::open(entry.path())?.sync_all()?;
+         // The handle is opened for writing: Windows `FlushFileBuffers`
+         // needs write access, and a read-only handle would fail the
+         // sync there. `write(true)` alone never truncates.
+         std::fs::OpenOptions::new()
+            .write(true)
+            .open(entry.path())?
+            .sync_all()?;
       }
    }
    sync_dir(dir);
