@@ -93,9 +93,9 @@
 //! # Embedding
 //!
 //! **Serverless (read-only filesystems):** point the cache root at
-//! the writable scratch area (`/tmp` on AWS Lambda) with the `http`
-//! feature, or bundle assets into the deployment and run cache-only
-//! over the bundle directory.
+//! the writable scratch area (`/tmp` on AWS Lambda) with the
+//! `reqwest` feature, or bundle assets into the deployment and run
+//! cache-only over the bundle directory.
 //!
 //! **Node.js (napi-rs):** assetify is a plain library on tokio; call
 //! it from `#[napi]` async functions. Access objects stay on the Rust

@@ -109,10 +109,12 @@ impl Assetify {
       // Coalesce concurrent acquisition of the same slot; serving
       // afterwards is cheap and runs per request.
       let flight = self.flight(&slot);
-      let revision = {
+      let ensured = {
          let _leader = flight.lock().await;
-         self.ensure_revision(&request.id).await?
+         self.ensure_revision(&request.id).await
       };
+      self.prune_flight(&slot, &flight);
+      let revision = ensured?;
 
       // Recover from a poisoned lock: the maps hold plain
       // bookkeeping, valid regardless of a panicking peer.
@@ -356,6 +358,23 @@ impl Assetify {
       )
    }
 
+   /// Drop a completed flight's map entry when no other request
+   /// holds it — the map otherwise grows by one entry per distinct
+   /// id, for the life of the engine.
+   fn prune_flight(&self, slot: &str, flight: &Arc<tokio::sync::Mutex<()>>) {
+      let mut flights = self.flights.lock().unwrap_or_else(PoisonError::into_inner);
+      // Exactly two strong refs — the map's and ours — means no
+      // concurrent request shares this flight, and holding the map
+      // lock means none can appear before the entry is gone. A later
+      // request simply creates a fresh one.
+      if let Some(entry) = flights.get(slot)
+         && Arc::ptr_eq(entry, flight)
+         && Arc::strong_count(flight) == 2
+      {
+         flights.remove(slot);
+      }
+   }
+
    fn poison_last_served(&self, slot: &str, reason: &str) {
       let revision = self
          .last_served
@@ -468,5 +487,35 @@ impl AssetifyBuilder {
          flights: Mutex::new(HashMap::new()),
          last_served: Mutex::new(HashMap::new()),
       })
+   }
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   #[tokio::test]
+   async fn completed_flights_are_pruned() {
+      let cache = tempfile::tempdir().unwrap();
+      let revision = cache.path().join("tokenizer/en/20260821");
+      std::fs::create_dir_all(&revision).unwrap();
+      std::fs::write(revision.join("meta.json"), b"{}").unwrap();
+
+      let engine = Assetify::builder(cache.path()).build().unwrap();
+      for _ in 0..2 {
+         let outcome = engine
+            .asset(AssetRequest::new(
+               "tokenizer/en",
+               [("meta.json", AccessKind::Stream)],
+            ))
+            .await;
+         assert!(matches!(outcome, AssetResponse::Available { .. }));
+      }
+
+      let flights = engine
+         .flights
+         .lock()
+         .unwrap_or_else(PoisonError::into_inner);
+      assert!(flights.is_empty(), "completed flights must not accumulate");
    }
 }
