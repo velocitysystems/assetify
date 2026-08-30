@@ -47,8 +47,36 @@ impl FetchError {
    }
 }
 
-/// The engine's sink: writes through to the staging file while
-/// hashing every byte, so verification cannot be skipped by any
+/// The sink handed to a [`Fetcher`]: it forwards body chunks to the
+/// engine's blocking writer over a bounded channel, so the file write
+/// and the hashing both run off the async runtime. Backpressure is
+/// the channel's bound; a dead receiver (the writer failed) surfaces
+/// as a write error that stops the fetch.
+pub(crate) struct ChannelSink {
+   tx: std::sync::mpsc::SyncSender<Vec<u8>>,
+}
+
+impl ChannelSink {
+   pub(crate) fn new(tx: std::sync::mpsc::SyncSender<Vec<u8>>) -> Self {
+      ChannelSink { tx }
+   }
+}
+
+impl Write for ChannelSink {
+   fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+      self.tx.send(buf.to_vec()).map_err(|_| {
+         std::io::Error::new(std::io::ErrorKind::BrokenPipe, "staging writer stopped")
+      })?;
+      Ok(buf.len())
+   }
+
+   fn flush(&mut self) -> std::io::Result<()> {
+      Ok(())
+   }
+}
+
+/// The engine's blocking-side sink: writes through to the staging file
+/// while hashing every byte, so verification cannot be skipped by any
 /// fetcher.
 pub(crate) struct HashingSink<W: Write> {
    inner: W,

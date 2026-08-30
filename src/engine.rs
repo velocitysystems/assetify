@@ -21,6 +21,7 @@
 //! the next request retries.
 
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -33,7 +34,7 @@ use crate::contract::delivery::{AssetResponse, DeliveryReceipt, PreparedAsset, P
 use crate::contract::provider::Provider;
 use crate::contract::request::{AssetRequest, RejectedDelivery};
 use crate::error::AssetifyError;
-use crate::source::fetch::{Fetcher, HashingSink};
+use crate::source::fetch::{ChannelSink, Fetcher, HashingSink};
 use crate::source::policy::{Admission, FetchPolicy};
 use crate::source::{ArchiveFormat, AssetSource, Locator, Payload, Resolver, local};
 use crate::store::{Store, layout};
@@ -288,14 +289,34 @@ impl Assetify {
       };
       let file = std::fs::File::create(destination)
          .map_err(|e| format!("cannot create staging file: {e}"))?;
-      let mut sink = HashingSink::new(file);
-      fetcher
-         .fetch(url, &mut sink)
+
+      // Body chunks are written and hashed on the blocking pool; the
+      // fetcher only feeds them over a bounded channel, so neither the
+      // write syscalls nor the SHA-256 ever run on the async runtime.
+      let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(8);
+      let writer = tokio::task::spawn_blocking(move || -> std::io::Result<[u8; 32]> {
+         let mut sink = HashingSink::new(std::io::BufWriter::with_capacity(256 * 1024, file));
+         while let Ok(chunk) = rx.recv() {
+            sink.write_all(&chunk)?;
+         }
+         sink.finish()
+      });
+
+      let mut sink = ChannelSink::new(tx);
+      let fetched = fetcher.fetch(url, &mut sink).await;
+      drop(sink); // close the channel so the writer loop ends
+
+      // The writer's error is the root cause (a disk failure also
+      // trips the fetcher's sink writes), so report it first.
+      let digest = match writer
          .await
-         .map_err(|e| format!("cannot acquire {name:?}: {e}"))?;
-      sink
-         .finish()
-         .map_err(|e| format!("cannot flush staging file: {e}"))
+         .map_err(|e| format!("staging writer task failed: {e}"))?
+      {
+         Ok(digest) => digest,
+         Err(e) => return Err(format!("cannot write staging file: {e}")),
+      };
+      fetched.map_err(|e| format!("cannot acquire {name:?}: {e}"))?;
+      Ok(digest)
    }
 
    /// The newest serviceable on-disk revision, or the reason there is
