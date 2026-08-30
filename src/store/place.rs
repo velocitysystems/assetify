@@ -70,11 +70,25 @@ pub(crate) fn place(staged: TempDir, destination: &Path) -> io::Result<Placement
       std::fs::create_dir_all(parent)?;
    }
 
+   // Flush the staged tree to stable storage before publishing it: the
+   // rename is atomic only in the namespace, so without this a crash
+   // in the writeback window can leave the revision directory present
+   // but its files zero-length — which `has_revision` would then serve
+   // forever as a verified asset, the digest never re-checked.
+   sync_tree(staged.path())?;
+
    // Disarm the TempDir's cleanup: from here the directory is either
    // renamed away or removed explicitly on the failure paths.
    let staged = staged.keep();
    match std::fs::rename(&staged, destination) {
-      Ok(()) => Ok(Placement::Placed),
+      Ok(()) => {
+         // Make the new directory entry itself durable, so the rename
+         // survives a crash as well as the data it published.
+         if let Some(parent) = destination.parent() {
+            sync_dir(parent);
+         }
+         Ok(Placement::Placed)
+      }
       Err(e) => {
          let _ = std::fs::remove_dir_all(&staged);
          if destination.exists() {
@@ -85,6 +99,32 @@ pub(crate) fn place(staged: TempDir, destination: &Path) -> io::Result<Placement
             Err(e)
          }
       }
+   }
+}
+
+/// `fsync` every file and directory in the tree, so both the file data
+/// and the directory entries that link it reach stable storage.
+fn sync_tree(dir: &Path) -> io::Result<()> {
+   for entry in std::fs::read_dir(dir)? {
+      let entry = entry?;
+      let file_type = entry.file_type()?;
+      if file_type.is_dir() {
+         sync_tree(&entry.path())?;
+      } else if file_type.is_file() {
+         std::fs::File::open(entry.path())?.sync_all()?;
+      }
+   }
+   sync_dir(dir);
+   Ok(())
+}
+
+/// `fsync` a directory so its entries are durable. Best-effort:
+/// platforms that don't allow opening a directory for sync (Windows)
+/// simply skip it, where the rename's own durability guarantees carry
+/// the entry instead.
+fn sync_dir(dir: &Path) {
+   if let Ok(handle) = std::fs::File::open(dir) {
+      let _ = handle.sync_all();
    }
 }
 
@@ -109,6 +149,25 @@ mod tests {
          std::fs::read_dir(staging_root).unwrap().count(),
          0,
          "staging area is left empty"
+      );
+   }
+
+   #[test]
+   fn a_nested_staged_tree_is_synced_and_placed_whole() {
+      let root = tempfile::tempdir().unwrap();
+      let staged = stage(root.path()).unwrap();
+      std::fs::create_dir_all(staged.path().join("system/sub")).unwrap();
+      std::fs::write(staged.path().join("meta.json"), b"{}").unwrap();
+      std::fs::write(staged.path().join("system/sub/weights.bin"), b"deep").unwrap();
+
+      let destination = root.path().join("models/classifier/v1/20260830");
+      // sync_tree recurses the whole tree before the rename; the whole
+      // structure must survive intact.
+      assert_eq!(place(staged, &destination).unwrap(), Placement::Placed);
+      assert_eq!(std::fs::read(destination.join("meta.json")).unwrap(), b"{}");
+      assert_eq!(
+         std::fs::read(destination.join("system/sub/weights.bin")).unwrap(),
+         b"deep"
       );
    }
 
