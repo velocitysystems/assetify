@@ -164,6 +164,11 @@ impl AsRef<Path> for AssetPath {
 }
 
 /// The provider's answer to one file's declared [`AccessKind`].
+///
+/// Non-exhaustive to match [`AccessKind`]: a finer access kind can
+/// arrive with the backing that satisfies it, without breaking
+/// consumers that match this.
+#[non_exhaustive]
 pub enum FileAccess {
    /// Satisfies [`AccessKind::Stream`].
    Stream(StreamAccess),

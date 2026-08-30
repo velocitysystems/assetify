@@ -4,6 +4,7 @@ use crate::contract::access::{AssetPath, FileAccess, RandomAccess, StreamAccess}
 
 /// One delivered file, matched to the request by name.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct PreparedFile {
    /// The name as the request's [`FileRequest`](crate::FileRequest) listed
    /// it. A partial or reordered delivery fails loudly as a named

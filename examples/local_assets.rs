@@ -109,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             FileAccess::AssetPath(path) => {
                tracing::info!(asset = %request.id, file = %spec.name, path = %path.display(), "materialized");
             }
+            _ => unreachable!("access kinds a request can name are covered above"),
          }
       }
    }

@@ -71,6 +71,10 @@ pub enum ArchiveFormat {
 
 /// One file of an asset revision: its delivered name, where its bytes
 /// live, and the digest they must hash to.
+///
+/// Non-exhaustive to match [`AssetSource`]: a per-file option can be
+/// added without breaking construction through the constructors.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct FileSource {
    /// The name consumers request the file by (one path segment). For
