@@ -124,8 +124,8 @@ mod store;
 pub mod testing;
 
 pub use contract::{
-   AccessKind, AssetPath, AssetRequest, AssetResponse, FileAccess, FileRequest, PreparedAsset,
-   PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
+   AccessKind, AssetPath, AssetRequest, AssetResponse, DeliveryReceipt, FileAccess, FileRequest,
+   PreparedAsset, PreparedFile, Provider, RandomAccess, RejectedDelivery, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};
 pub use engine::{Assetify, AssetifyBuilder};

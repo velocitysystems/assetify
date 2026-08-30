@@ -24,6 +24,38 @@ impl PreparedFile {
    }
 }
 
+/// An opaque handle to one delivery. A consumer echoes it back inside
+/// a [`RejectedDelivery`](crate::RejectedDelivery) so the provider
+/// poisons *exactly* the copy the consumer could not load, never a
+/// guess — the identity travels with the delivery and round-trips
+/// through the rejection. No storage detail is exposed: the consumer
+/// obtains one only from [`PreparedAsset::receipt`] and never
+/// inspects it — there is no public constructor, so a rejection can
+/// only ever name a delivery that actually happened.
+#[derive(Clone, Debug)]
+pub struct DeliveryReceipt {
+   /// The revision served, when the provider versions its cache.
+   /// Absent for providers that don't (an in-memory test double), in
+   /// which case a rejection echo has nothing to poison.
+   pub(crate) revision: Option<String>,
+}
+
+impl DeliveryReceipt {
+   /// A receipt naming the revision a delivery was served from.
+   /// Provider-side API.
+   pub(crate) fn for_revision(revision: impl Into<String>) -> Self {
+      DeliveryReceipt {
+         revision: Some(revision.into()),
+      }
+   }
+
+   /// A receipt for a delivery with no revision to poison (a provider
+   /// that doesn't version its cache).
+   pub(crate) fn none() -> Self {
+      DeliveryReceipt { revision: None }
+   }
+}
+
 /// One delivered asset: every requested file, each behind its access
 /// object.
 ///
@@ -35,13 +67,33 @@ impl PreparedFile {
 pub struct PreparedAsset {
    /// Every file the request named for this asset.
    pub files: Vec<PreparedFile>,
+   /// The opaque handle to this delivery, echoed back to reject it.
+   receipt: DeliveryReceipt,
 }
 
 impl PreparedAsset {
    /// A delivery of the given files. Provider-side API; consumers
-   /// receive these inside [`AssetResponse::Available`].
+   /// receive these inside [`AssetResponse::Available`]. A provider
+   /// that versions its cache stamps a receipt with
+   /// [`with_receipt`](PreparedAsset::with_receipt).
    pub fn new(files: Vec<PreparedFile>) -> Self {
-      PreparedAsset { files }
+      PreparedAsset {
+         files,
+         receipt: DeliveryReceipt::none(),
+      }
+   }
+
+   /// Attach the delivery receipt. Provider-side API.
+   pub(crate) fn with_receipt(mut self, receipt: DeliveryReceipt) -> Self {
+      self.receipt = receipt;
+      self
+   }
+
+   /// This delivery's opaque receipt. Echo it in a
+   /// [`RejectedDelivery`](crate::RejectedDelivery) to reject exactly
+   /// this delivery.
+   pub fn receipt(&self) -> DeliveryReceipt {
+      self.receipt.clone()
    }
 
    /// The delivered file with this name, if present. Absence is a

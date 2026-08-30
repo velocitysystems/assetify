@@ -1,6 +1,7 @@
 //! The request side: what a consumer declares it needs.
 
 use crate::contract::access::AccessKind;
+use crate::contract::delivery::DeliveryReceipt;
 
 /// One file the asset must contain, with the access the consumer
 /// requires for it.
@@ -38,12 +39,30 @@ impl<S: Into<String>> From<(S, AccessKind)> for FileRequest {
 /// content validation).
 ///
 /// Echoed back on the next request for the same asset so the provider
-/// treats its copy as poisoned — re-acquire, don't re-serve.
+/// poisons *exactly the delivery being rejected* — re-acquire, don't
+/// re-serve. Carrying the delivery's [`DeliveryReceipt`] is what makes
+/// the target precise: even with several concurrent deliveries of one
+/// asset, the rejection names the one it came from, never "whatever
+/// was served most recently".
 #[derive(Clone, Debug)]
 pub struct RejectedDelivery {
+   /// The receipt from the [`PreparedAsset`](crate::PreparedAsset)
+   /// being rejected, via [`PreparedAsset::receipt`](crate::PreparedAsset::receipt).
+   pub receipt: DeliveryReceipt,
    /// The consumer's load-failure detail. Diagnostic text; providers
    /// do not branch on it.
    pub reason: String,
+}
+
+impl RejectedDelivery {
+   /// Reject the delivery this receipt came from, with a
+   /// human-readable reason.
+   pub fn new(receipt: DeliveryReceipt, reason: impl Into<String>) -> Self {
+      RejectedDelivery {
+         receipt,
+         reason: reason.into(),
+      }
+   }
 }
 
 /// One asset the consumer wants — named logically, never by path.

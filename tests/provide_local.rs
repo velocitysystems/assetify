@@ -188,14 +188,16 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
       )]))
       .build()
       .unwrap();
-   unwrap_available(engine.asset(tokenizer_request()).await);
+   let delivered = unwrap_available(engine.asset(tokenizer_request()).await);
 
-   // The consumer could not load the delivery; the echo poisons the
-   // revision, and the resolver still names it — so nothing serves.
+   // The consumer could not load the delivery; echoing its receipt
+   // poisons that revision, and the resolver still names it — so
+   // nothing serves.
    let mut echoed = tokenizer_request();
-   echoed.rejected = Some(RejectedDelivery {
-      reason: "payload failed content validation".to_string(),
-   });
+   echoed.rejected = Some(RejectedDelivery::new(
+      delivered.receipt(),
+      "payload failed content validation",
+   ));
    let reason = unwrap_unavailable(engine.asset(echoed).await);
    assert!(reason.contains("rejected by a previous load"), "{reason}");
 
@@ -218,6 +220,58 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
       .build()
       .unwrap();
    unwrap_available(recovered.asset(tokenizer_request()).await);
+}
+
+#[tokio::test]
+async fn a_rejection_poisons_its_own_revision_not_the_newest() {
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+
+   // Consumer A is delivered the older revision and keeps its receipt.
+   let old = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260812"),
+      )]))
+      .build()
+      .unwrap();
+   let delivered_a = unwrap_available(old.asset(tokenizer_request()).await);
+
+   // Meanwhile the resolver rolls forward: a newer, good revision is
+   // fetched, placed, and served to someone else.
+   let new = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260821"),
+      )]))
+      .build()
+      .unwrap();
+   unwrap_available(new.asset(tokenizer_request()).await);
+
+   // A now rejects the delivery it actually held (the older one). The
+   // old, guessing code would have poisoned whatever was served most
+   // recently — the good new revision. The receipt pins the target.
+   let mut echoed = tokenizer_request();
+   echoed.rejected = Some(RejectedDelivery::new(
+      delivered_a.receipt(),
+      "payload failed content validation",
+   ));
+   unwrap_available(new.asset(echoed).await);
+
+   // The newer revision is untouched and still serves; only the older
+   // one carries a poison marker.
+   assert!(
+      !cache
+         .path()
+         .join("tokenizer/en/20260821/.poisoned")
+         .exists()
+   );
+   assert!(
+      cache
+         .path()
+         .join("tokenizer/en/20260812/.poisoned")
+         .exists()
+   );
 }
 
 /// Counts resolutions, then delegates to a static map.

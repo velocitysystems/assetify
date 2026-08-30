@@ -29,9 +29,9 @@ use crate::access::FileRandom;
 #[cfg(feature = "mmap")]
 use crate::access::MmapRandom;
 use crate::contract::access::{AccessKind, AssetPath, FileAccess};
-use crate::contract::delivery::{AssetResponse, PreparedAsset, PreparedFile};
+use crate::contract::delivery::{AssetResponse, DeliveryReceipt, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
-use crate::contract::request::AssetRequest;
+use crate::contract::request::{AssetRequest, RejectedDelivery};
 use crate::error::AssetifyError;
 use crate::source::fetch::{Fetcher, HashingSink};
 use crate::source::policy::{Admission, FetchPolicy};
@@ -62,9 +62,6 @@ pub struct Assetify {
    /// asset coalesce instead of racing the acquisition. Followers
    /// re-check the cache after the leader finishes and hit it.
    flights: Mutex<HashMap<Slot, Arc<tokio::sync::Mutex<()>>>>,
-   /// The revision each slot last served, so a rejection echo poisons
-   /// the right directory.
-   last_served: Mutex<HashMap<Slot, String>>,
 }
 
 impl Assetify {
@@ -103,7 +100,7 @@ impl Assetify {
 
       let slot = request.id.clone();
       if let Some(rejected) = &request.rejected {
-         self.poison_last_served(&slot, &rejected.reason);
+         self.poison_rejected(&request.id, rejected);
       }
 
       // Coalesce concurrent acquisition of the same slot; serving
@@ -116,16 +113,10 @@ impl Assetify {
       self.prune_flight(&slot, &flight);
       let revision = ensured?;
 
-      // Recover from a poisoned lock: the maps hold plain
-      // bookkeeping, valid regardless of a panicking peer.
-      self
-         .last_served
-         .lock()
-         .unwrap_or_else(PoisonError::into_inner)
-         .insert(slot, revision.clone());
-
       let revision_dir = self.store.revision_dir(&request.id, &revision);
-      let asset = self.serve(request, &revision_dir)?;
+      let asset = self
+         .serve(request, &revision_dir)?
+         .with_receipt(DeliveryReceipt::for_revision(&revision));
       tracing::info!(
          asset = %request.id,
          revision = %revision,
@@ -375,23 +366,21 @@ impl Assetify {
       }
    }
 
-   fn poison_last_served(&self, slot: &str, reason: &str) {
-      let revision = self
-         .last_served
-         .lock()
-         .unwrap_or_else(PoisonError::into_inner)
-         .get(slot)
-         .cloned()
-         .or_else(|| self.store.newest_revision(slot));
-      if let Some(revision) = revision {
-         tracing::warn!(
-               asset = %slot,
-            revision = %revision,
-            %reason,
-            "poisoned rejected revision"
-         );
-         self.store.poison_revision(slot, &revision, reason);
-      }
+   /// Poison exactly the revision the rejected delivery came from.
+   /// The receipt carries that revision, so there is no guessing: a
+   /// rejection for a delivery that named no revision (a provider
+   /// without a versioned cache) poisons nothing.
+   fn poison_rejected(&self, id: &str, rejected: &RejectedDelivery) {
+      let Some(revision) = &rejected.receipt.revision else {
+         return;
+      };
+      tracing::warn!(
+         asset = %id,
+         revision = %revision,
+         reason = %rejected.reason,
+         "poisoned rejected revision"
+      );
+      self.store.poison_revision(id, revision, &rejected.reason);
    }
 }
 
@@ -485,7 +474,6 @@ impl AssetifyBuilder {
          fetcher,
          policy: self.policy,
          flights: Mutex::new(HashMap::new()),
-         last_served: Mutex::new(HashMap::new()),
       })
    }
 }

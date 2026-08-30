@@ -315,19 +315,22 @@ Seed the tree in assetify's layout: `<root>/<id>/<revision>/<files>`.
 
 `Unavailable { reason }` is a degraded capability, not an error to branch on:
 keep running and request again later. If a delivery verified but failed *your*
-load (corrupt content, wrong schema), echo it back so the copy is never
-re-served:
+load (corrupt content, wrong schema), echo its receipt back so that exact copy
+is never re-served:
 
 ```rust
 use assetify::RejectedDelivery;
 
+// `asset` is the PreparedAsset you could not load.
 let mut retry = request.clone();
-retry.rejected = Some(RejectedDelivery { reason: "schema check failed".into() });
+retry.rejected = Some(RejectedDelivery::new(asset.receipt(), "schema check failed"));
 // The next provide poisons that revision and recovers via a newer one.
 ```
 
-The poison marker persists on disk, so a restarted app never loops on the
-same bad payload.
+The receipt is what makes the target precise: even with several concurrent
+deliveries of one asset, the rejection poisons the delivery it came from,
+never "whatever was served most recently". The poison marker persists on
+disk, so a restarted app never loops on the same bad payload.
 
 ### Testing your consumer
 
