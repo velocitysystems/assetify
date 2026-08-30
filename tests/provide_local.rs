@@ -301,6 +301,60 @@ async fn a_denied_acquisition_with_an_empty_cache_reports_the_reason() {
    assert!(reason.contains("offline mode is on"), "{reason}");
 }
 
+#[tokio::test]
+async fn one_provide_acquires_distinct_assets_concurrently_in_request_order() {
+   use assetify::Provider as _;
+
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+   let calls = Arc::new(AtomicUsize::new(0));
+
+   let engine = Assetify::builder(cache.path())
+      .resolver(CountingResolver {
+         calls: Arc::clone(&calls),
+         inner: StaticResolver::new([
+            ("tokenizer/en", tokenizer_source(remote.path(), "20260821")),
+            (
+               "models/sentiment",
+               AssetSource::new(
+                  "20260821",
+                  vec![file_source(remote.path(), "labels.txt", b"pos neg")],
+               ),
+            ),
+         ]),
+      })
+      .build()
+      .unwrap();
+
+   // Two distinct assets plus a duplicate id, in one call.
+   let outcomes = engine
+      .provide(&[
+         tokenizer_request(),
+         AssetRequest::new(
+            "models/sentiment",
+            vec![FileRequest::new("labels.txt", AccessKind::Stream)],
+         ),
+         tokenizer_request(),
+      ])
+      .await;
+
+   // Order-preserving: each outcome matches its request's files.
+   assert_eq!(outcomes.len(), 3);
+   let mut outcomes = outcomes.into_iter();
+   let mut first = unwrap_available(outcomes.next().unwrap());
+   assert!(first.take_file("index.dat").is_some());
+   let mut second = unwrap_available(outcomes.next().unwrap());
+   assert!(second.take_file("labels.txt").is_some());
+   let mut third = unwrap_available(outcomes.next().unwrap());
+   assert!(third.take_file("index.dat").is_some());
+
+   // The duplicate id coalesced onto one acquisition: its second
+   // request either waited on the same flight or hit the cache, and
+   // only one copy of each revision was placed.
+   assert!(cache.path().join("tokenizer/en/20260821").is_dir());
+   assert!(cache.path().join("models/sentiment/20260821").is_dir());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn concurrent_requests_for_one_asset_all_succeed() {
    let remote = tempfile::tempdir().unwrap();

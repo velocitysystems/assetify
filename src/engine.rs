@@ -379,11 +379,10 @@ impl Assetify {
 #[async_trait::async_trait]
 impl Provider for Assetify {
    async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetResponse> {
-      let mut outcomes = Vec::with_capacity(requests.len());
-      for request in requests {
-         outcomes.push(self.prepare_one(request).await);
-      }
-      outcomes
+      // Concurrent, order-preserving: distinct assets acquire in
+      // parallel, while the per-id single-flight still coalesces
+      // duplicates onto one acquisition.
+      futures_util::future::join_all(requests.iter().map(|request| self.prepare_one(request))).await
    }
 }
 

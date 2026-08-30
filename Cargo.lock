@@ -27,6 +27,7 @@ version = "0.1.0"
 dependencies = [
  "assetify",
  "async-trait",
+ "futures-util",
  "hex",
  "memmap2",
  "rand 0.9.5",

@@ -27,6 +27,9 @@ zip = ["dep:zip"]
 
 [dependencies]
 async-trait = "0.1.92"
+futures-util = { version = "0.3.34", default-features = false, features = [
+   "alloc",
+] }
 hex = "0.4.3"
 memmap2 = { version = "0.9.11", optional = true }
 reqwest = { version = "0.12.9", default-features = false, features = [
