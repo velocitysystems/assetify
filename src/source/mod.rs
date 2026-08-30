@@ -13,6 +13,7 @@
 pub(crate) mod archive;
 pub mod fetch;
 pub mod local;
+pub mod policy;
 #[cfg(feature = "reqwest")]
 pub mod reqwest;
 pub mod static_resolver;

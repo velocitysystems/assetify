@@ -236,6 +236,42 @@ let engine = Assetify::builder(root)
 //    engine, and verification always stays on the engine's side.
 ```
 
+### Gating acquisition
+
+A resolver answers *where* an asset lives; a `FetchPolicy` answers the
+separate question — *may I fetch right now?* Wire your app's business rules
+(an offline-mode switch, a metered connection) into the builder:
+
+```rust
+use assetify::{Admission, FetchPolicy};
+
+struct RespectOfflineMode {
+   offline: std::sync::atomic::AtomicBool, // wired to your settings
+}
+
+#[async_trait::async_trait]
+impl FetchPolicy for RespectOfflineMode {
+   async fn admit(&self, _id: &str) -> Admission {
+      if self.offline.load(std::sync::atomic::Ordering::Relaxed) {
+         Admission::Deny { reason: "offline mode is on".into() }
+      } else {
+         Admission::Allow
+      }
+   }
+}
+
+let engine = Assetify::builder(root)
+   .resolver(resolver)
+   .fetch_policy(RespectOfflineMode { offline: offline_flag })
+   .build()?;
+```
+
+The policy is consulted once per requested asset, *before* resolution — a
+denied request does no resolver or network work. Denial is gentle by design:
+the engine serves the newest on-disk revision exactly as if resolution had
+failed, so a denied request usually succeeds silently from cache and reports
+`Unavailable` (with your reason) only when nothing is on disk yet.
+
 ### Archive payloads
 
 When the distribution channel ships one compressed archive per asset, mark

@@ -126,6 +126,7 @@ pub use digest::{Digest, InvalidDigest};
 pub use engine::{Assetify, AssetifyBuilder};
 pub use error::AssetifyError;
 pub use source::fetch::{FetchError, Fetcher};
+pub use source::policy::{Admission, FetchPolicy};
 #[cfg(feature = "reqwest")]
 pub use source::reqwest::ReqwestFetcher;
 pub use source::static_resolver::StaticResolver;

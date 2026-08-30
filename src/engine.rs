@@ -34,6 +34,7 @@ use crate::contract::provider::Provider;
 use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
 use crate::source::fetch::{Fetcher, HashingSink};
+use crate::source::policy::{Admission, FetchPolicy};
 use crate::source::{ArchiveFormat, AssetSource, Locator, Payload, Resolver, local};
 use crate::store::{Store, layout};
 
@@ -54,6 +55,9 @@ pub struct Assetify {
    /// builder, defaulted to reqwest under the `reqwest` feature, or
    /// absent (URL sources report unavailable).
    fetcher: Option<Box<dyn Fetcher>>,
+   /// The host's "may I fetch right now?" hook. Absent, every
+   /// acquisition is admitted.
+   policy: Option<Box<dyn FetchPolicy>>,
    /// One async mutex per slot: concurrent requests for the same
    /// asset coalesce instead of racing the acquisition. Followers
    /// re-check the cache after the leader finishes and hit it.
@@ -70,6 +74,7 @@ impl Assetify {
          root: cache_root.into(),
          resolver: None,
          fetcher: None,
+         policy: None,
       }
    }
 
@@ -138,6 +143,15 @@ impl Assetify {
             .newest_revision(id)
             .ok_or_else(|| format!("cache-only mode, and {id:?} holds nothing servable"));
       };
+
+      if let Some(policy) = &self.policy
+         && let Admission::Deny { reason } = policy.admit(id).await
+      {
+         // Before resolution on purpose: a denied request does no
+         // resolver or network work, serves silently from cache, and
+         // surfaces only when nothing is on disk.
+         return self.fallback(id, &format!("acquisition declined: {reason}"));
+      }
 
       let source = match resolver.resolve(id).await {
          Ok(Some(source)) => source,
@@ -390,6 +404,7 @@ pub struct AssetifyBuilder {
    root: PathBuf,
    resolver: Option<Box<dyn Resolver>>,
    fetcher: Option<Box<dyn Fetcher>>,
+   policy: Option<Box<dyn FetchPolicy>>,
 }
 
 impl AssetifyBuilder {
@@ -408,6 +423,16 @@ impl AssetifyBuilder {
    /// engine.
    pub fn fetcher(mut self, fetcher: impl Fetcher + 'static) -> Self {
       self.fetcher = Some(Box::new(fetcher));
+      self
+   }
+
+   /// The host's "may I fetch right now?" hook (offline mode, metered
+   /// connections). Consulted once per requested asset, before
+   /// resolution; a denial serves the newest on-disk revision, so it
+   /// usually succeeds silently from cache. Omit to admit every
+   /// acquisition.
+   pub fn fetch_policy(mut self, policy: impl FetchPolicy + 'static) -> Self {
+      self.policy = Some(Box::new(policy));
       self
    }
 
@@ -440,6 +465,7 @@ impl AssetifyBuilder {
          store: Store::new(self.root),
          resolver: self.resolver,
          fetcher,
+         policy: self.policy,
          flights: Mutex::new(HashMap::new()),
          last_served: Mutex::new(HashMap::new()),
       })

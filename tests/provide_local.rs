@@ -234,6 +234,73 @@ impl Resolver for CountingResolver {
    }
 }
 
+/// A policy switched by a flag — the offline-mode shape.
+struct OfflineSwitch {
+   offline: bool,
+}
+
+#[async_trait::async_trait]
+impl assetify::FetchPolicy for OfflineSwitch {
+   async fn admit(&self, _: &str) -> assetify::Admission {
+      if self.offline {
+         assetify::Admission::Deny {
+            reason: "offline mode is on".to_string(),
+         }
+      } else {
+         assetify::Admission::Allow
+      }
+   }
+}
+
+#[tokio::test]
+async fn a_denied_acquisition_serves_the_cache_without_resolving() {
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+   let calls = Arc::new(AtomicUsize::new(0));
+   let resolver = |calls: &Arc<AtomicUsize>| CountingResolver {
+      calls: Arc::clone(calls),
+      inner: StaticResolver::new([("tokenizer/en", tokenizer_source(remote.path(), "20260821"))]),
+   };
+
+   // Warm the cache with acquisition admitted.
+   let online = Assetify::builder(cache.path())
+      .resolver(resolver(&calls))
+      .fetch_policy(OfflineSwitch { offline: false })
+      .build()
+      .unwrap();
+   unwrap_available(online.asset(tokenizer_request()).await);
+   assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+   // Denied: the cached revision serves silently, and the resolver is
+   // never consulted.
+   let offline = Assetify::builder(cache.path())
+      .resolver(resolver(&calls))
+      .fetch_policy(OfflineSwitch { offline: true })
+      .build()
+      .unwrap();
+   unwrap_available(offline.asset(tokenizer_request()).await);
+   assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_denied_acquisition_with_an_empty_cache_reports_the_reason() {
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260821"),
+      )]))
+      .fetch_policy(OfflineSwitch { offline: true })
+      .build()
+      .unwrap();
+
+   let reason = unwrap_unavailable(engine.asset(tokenizer_request()).await);
+   assert!(reason.contains("acquisition declined"), "{reason}");
+   assert!(reason.contains("offline mode is on"), "{reason}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn concurrent_requests_for_one_asset_all_succeed() {
    let remote = tempfile::tempdir().unwrap();
