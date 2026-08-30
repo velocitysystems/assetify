@@ -4,7 +4,7 @@
 
 use std::io::Read as _;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, Provider};
 use napi_derive::napi;
 
 /// What crosses the bridge: names and derived values, never bytes or

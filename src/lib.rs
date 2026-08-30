@@ -43,7 +43,7 @@
 //!
 //! ```no_run
 //! use assetify::{
-//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, StaticResolver,
+//!    AccessKind, AssetRequest, AssetSource, Assetify, FileSource, Provider, StaticResolver,
 //! };
 //!
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {

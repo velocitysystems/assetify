@@ -7,6 +7,7 @@ name = "assetify"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-util",
  "hex",
  "memmap2",
  "sha2",

@@ -22,4 +22,14 @@ pub trait Provider: Send + Sync {
    /// behind access objects of the declared kinds. One outcome per
    /// request, in request order.
    async fn provide(&self, requests: &[AssetRequest]) -> Vec<AssetResponse>;
+
+   /// Single-asset convenience over [`provide`](Provider::provide).
+   async fn asset(&self, request: AssetRequest) -> AssetResponse {
+      self
+         .provide(std::slice::from_ref(&request))
+         .await
+         .into_iter()
+         .next()
+         .expect("provide returns one outcome per request")
+   }
 }

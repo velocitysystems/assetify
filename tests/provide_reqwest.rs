@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use assetify::{
    AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileRequest, FileSource,
-   Locator, StaticResolver,
+   Locator, Provider, StaticResolver,
 };
 use sha2::Digest as _;
 use wiremock::matchers::{method, path};

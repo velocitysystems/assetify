@@ -39,7 +39,8 @@ assetify = { git = "https://github.com/velocitysystems/assetify", features = ["r
 
 ```rust
 use assetify::{
-   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, StaticResolver,
+   AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, FileSource, Provider,
+   StaticResolver,
 };
 ```
 

@@ -10,7 +10,7 @@
 use std::io::Read as _;
 use std::path::PathBuf;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, Provider};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::{Value, json};
 

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
    AccessKind, AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileAccess, FileRequest,
-   FileSource, Locator, RejectedDelivery, ResolveError, Resolver, StaticResolver,
+   FileSource, Locator, Provider, RejectedDelivery, ResolveError, Resolver, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -357,8 +357,6 @@ async fn a_denied_acquisition_with_an_empty_cache_reports_the_reason() {
 
 #[tokio::test]
 async fn one_provide_acquires_distinct_assets_concurrently_in_request_order() {
-   use assetify::Provider as _;
-
    let remote = tempfile::tempdir().unwrap();
    let cache = tempfile::tempdir().unwrap();
    let calls = Arc::new(AtomicUsize::new(0));

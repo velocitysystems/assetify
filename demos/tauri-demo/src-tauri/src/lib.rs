@@ -5,7 +5,7 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify};
+use assetify::{AccessKind, AssetRequest, AssetResponse, Assetify, Provider};
 use tauri::Manager as _;
 
 /// The engine, built once in `setup` and shared with every command.

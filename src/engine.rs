@@ -75,16 +75,6 @@ impl Assetify {
       }
    }
 
-   /// Single-asset convenience over [`Provider::provide`].
-   pub async fn asset(&self, request: AssetRequest) -> AssetResponse {
-      self
-         .provide(std::slice::from_ref(&request))
-         .await
-         .into_iter()
-         .next()
-         .expect("provide returns one outcome per request")
-   }
-
    async fn prepare_one(&self, request: &AssetRequest) -> AssetResponse {
       match self.try_prepare(request).await {
          Ok(asset) => AssetResponse::Available { asset },

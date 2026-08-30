@@ -8,7 +8,7 @@ use std::path::Path;
 
 use assetify::{
    AccessKind, ArchiveFormat, AssetRequest, AssetResponse, AssetSource, Assetify, Digest,
-   FileSource, Locator, StaticResolver,
+   FileSource, Locator, Provider, StaticResolver,
 };
 use sha2::Digest as _;
 
