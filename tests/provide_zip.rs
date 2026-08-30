@@ -79,10 +79,11 @@ async fn an_archive_becomes_the_revision_and_serves_by_name() {
    model.read_at_exact(0, &mut start).unwrap();
    assert_eq!(&start, b"weights");
 
-   // The archive itself was never placed.
+   // The archive itself was never placed; its entries live in the
+   // archive's own isolated subdirectory, served by name regardless.
    let revision_dir = root.path().join("tokenizer/en/20260830");
    assert!(!revision_dir.join("pack.zip").exists());
-   assert!(revision_dir.join("system/model.bin").exists());
+   assert!(revision_dir.join("_archive_0/system/model.bin").exists());
 }
 
 #[tokio::test]
@@ -190,6 +191,71 @@ async fn duplicate_names_across_the_extracted_tree_stay_ambiguous() {
       panic!("expected unavailability");
    };
    assert!(reason.contains("ambiguous"), "{reason}");
+}
+
+#[tokio::test]
+async fn an_archive_entry_colliding_with_a_sibling_file_is_ambiguous() {
+   let remote = tempfile::tempdir().unwrap();
+   let root = tempfile::tempdir().unwrap();
+
+   // An archive entry and a plain file share the name "shared.txt".
+   // Per-archive isolation means the archive can no longer silently
+   // overwrite the verified plain file; the clash surfaces as an
+   // ambiguity, never a wrong-bytes delivery.
+   let archive = fixture_zip(&[("shared.txt", b"from the archive".as_slice())]);
+   let plain = remote.path().join("shared.txt");
+   std::fs::write(&plain, b"the verified plain file").unwrap();
+
+   let source = AssetSource::new(
+      "20260830",
+      vec![
+         archive_source(remote.path(), &archive),
+         FileSource::new(
+            "shared.txt",
+            Locator::File(plain),
+            sha256_of(b"the verified plain file"),
+         ),
+      ],
+   );
+   let engine = engine_over(root.path(), source);
+
+   let outcome = engine
+      .asset(AssetRequest::new(
+         "tokenizer/en",
+         [("shared.txt", AccessKind::Stream)],
+      ))
+      .await;
+   let AssetResponse::Unavailable { reason } = outcome else {
+      panic!("a name collision must not silently deliver one copy");
+   };
+   assert!(reason.contains("ambiguous"), "{reason}");
+}
+
+#[tokio::test]
+async fn an_empty_archive_is_unavailable_and_never_stuck() {
+   let remote = tempfile::tempdir().unwrap();
+   let root = tempfile::tempdir().unwrap();
+
+   let source = AssetSource::new(
+      "20260830",
+      vec![archive_source(remote.path(), &fixture_zip(&[]))],
+   );
+   let engine = engine_over(root.path(), source);
+
+   let request = || AssetRequest::new("tokenizer/en", [("meta.json", AccessKind::Stream)]);
+
+   // Nothing placed, so the asset is unavailable — and, crucially, a
+   // second request reports the same rather than cache-hitting an
+   // empty revision forever.
+   assert!(matches!(
+      engine.asset(request()).await,
+      AssetResponse::Unavailable { .. }
+   ));
+   assert!(matches!(
+      engine.asset(request()).await,
+      AssetResponse::Unavailable { .. }
+   ));
+   assert!(!root.path().join("tokenizer/en/20260830").exists());
 }
 
 #[tokio::test]

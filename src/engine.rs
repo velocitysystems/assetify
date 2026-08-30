@@ -190,7 +190,7 @@ impl Assetify {
          .stage()
          .map_err(|e| format!("cannot create a staging directory: {e}"))?;
 
-      for file in &source.files {
+      for (index, file) in source.files.iter().enumerate() {
          layout::validate_file_name(&file.name)?;
 
          // Archive bytes land in a temp file *beside* the staged
@@ -220,8 +220,18 @@ impl Assetify {
          }
 
          if let Payload::Archive(format) = &file.payload {
+            // Each archive extracts into its own subdirectory, so its
+            // entries can never overwrite a sibling's verified file.
+            // The `_` prefix cannot collide with any delivered file
+            // name (those must start alphanumeric) yet is not hidden,
+            // so `find_file` still reaches the extracted files by name
+            // — and a real collision with a sibling surfaces as an
+            // ambiguity, never a silent overwrite.
+            let archive_dir = staged.path().join(format!("_archive_{index}"));
+            std::fs::create_dir(&archive_dir)
+               .map_err(|e| format!("cannot create an extraction directory: {e}"))?;
             self
-               .extract(format, &destination, staged.path())
+               .extract(format, &destination, &archive_dir)
                .await
                .map_err(|e| format!("cannot extract {:?}: {e}", file.name))?;
          }

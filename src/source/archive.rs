@@ -30,16 +30,25 @@ pub(crate) async fn extract_zip(archive: &Path, destination: &Path) -> Result<()
          .map_err(|e| format!("read archive: {e}"))?;
       zip.extract(&destination)
          .map_err(|e| format!("extract archive: {e}"))?;
-      reject_symlinks(&destination)
+      // One walk validates the tree and counts its files: an archive
+      // that yields no files (empty, or directory entries only) would
+      // otherwise publish an empty revision that every later request
+      // cache-hits and fails to serve, forever.
+      if scan_extracted(&destination)? == 0 {
+         return Err("archive contains no files".to_string());
+      }
+      Ok(())
    })
    .await
    .map_err(|e| format!("extraction task failed: {e}"))?
 }
 
-/// Fail if any entry in the extracted tree is a symlink. Uses
-/// `symlink_metadata` (never follows), so a link pointing anywhere is
-/// caught rather than traversed.
-fn reject_symlinks(dir: &Path) -> Result<(), String> {
+/// Walk the extracted tree, rejecting any symlink (via
+/// `symlink_metadata`, which never follows, so a link pointing
+/// anywhere is caught rather than traversed) and returning how many
+/// regular files it holds.
+fn scan_extracted(dir: &Path) -> Result<usize, String> {
+   let mut files = 0;
    let entries = std::fs::read_dir(dir).map_err(|e| format!("scan extracted tree: {e}"))?;
    for entry in entries {
       let entry = entry.map_err(|e| format!("scan extracted tree: {e}"))?;
@@ -52,10 +61,12 @@ fn reject_symlinks(dir: &Path) -> Result<(), String> {
          ));
       }
       if meta.is_dir() {
-         reject_symlinks(&entry.path())?;
+         files += scan_extracted(&entry.path())?;
+      } else if meta.is_file() {
+         files += 1;
       }
    }
-   Ok(())
+   Ok(files)
 }
 
 #[cfg(test)]
@@ -135,6 +146,22 @@ mod tests {
       assert!(
          result.unwrap_err().contains("symlink"),
          "the reason names the symlink"
+      );
+   }
+
+   #[tokio::test]
+   async fn an_empty_archive_is_rejected() {
+      let dir = tempfile::tempdir().unwrap();
+      let archive = dir.path().join("empty.zip");
+      std::fs::write(&archive, fixture_zip(&[])).unwrap();
+
+      let dest = dir.path().join("out");
+      std::fs::create_dir(&dest).unwrap();
+      let result = extract_zip(&archive, &dest).await;
+      assert!(result.is_err(), "an archive with no files must fail");
+      assert!(
+         result.unwrap_err().contains("no files"),
+         "the reason says so"
       );
    }
 }
