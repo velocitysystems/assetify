@@ -13,7 +13,7 @@ tables, structured data.
 - **Atomic** — a revision lands whole or not at all, and is never mutated
 - **Versioned** — revisions are immutable; the newest one an asset holds wins
 - **Offline-first** — acquisition failures fall back to the newest revision on disk
-- **Access by intent** — files arrive as streams, random access (mmap), or real paths
+- **Read any way** — each file reads as a stream, random access (mmap), or a real path
 - **Poisoning** — a payload that failed your load is never re-served
 - **Single-flight** — concurrent requests for one asset share one download
 - **Testable** — an in-memory provider runs your loading code without disk or network
@@ -125,25 +125,22 @@ if let Some(path) = asset.file("rules.txt").unwrap().path() {
 
 ### Static vs. dynamic resolvers
 
-A resolver answers one question for the engine: *where can this asset be
-acquired right now?* Everything after the answer — download, verify, cache,
-offline fallback — is identical. The only choice you make is **when the
-answer is decided**:
+A resolver answers one question: *where can this asset be acquired right
+now?* Everything after — download, verify, cache, offline fallback — is the
+same. Your only choice is **when that answer is decided**:
 
 | | Static | Dynamic |
 | --- | --- | --- |
-| The answer is decided… | when you write the code | on every request |
-| Assets can change… | with an app update or restart | while the app runs |
+| Decided… | when you write the code | on every request |
+| Assets change… | with an app update or restart | while the app runs |
 | You write… | a `StaticResolver` map | a type implementing `Resolver` |
-| Typical case | URLs + checksums pinned per release | your backend publishes new revisions; per-user entitlements |
+| Typical case | URLs + checksums pinned per release | a backend that publishes new revisions; per-user entitlements |
 
-The decision test: *can "where does this asset live?" change while your app
-is running?* No → `StaticResolver` (as in the quick start). Yes → implement
-`Resolver`, one async method. Swapping later touches one line — the
-`.resolver(…)` call.
+Can "where does this asset live?" change while the app runs? No →
+`StaticResolver` (as in the quick start). Yes → implement `Resolver`, one
+async method; swapping later touches only the `.resolver(…)` line.
 
-A dynamic resolver that asks your backend which release of an asset is
-current:
+A dynamic resolver asking a backend which release is current:
 
 ```rust
 use assetify::{AssetSource, FileSource, ResolveError, Resolver};
@@ -317,10 +314,9 @@ retry.rejected = Some(RejectedDelivery::new(asset.receipt(), "schema check faile
 // The next provide poisons that revision and recovers via a newer one.
 ```
 
-The receipt is what makes the target precise: even with several concurrent
-deliveries of one asset, the rejection poisons the delivery it came from,
-never "whatever was served most recently". The poison marker persists on
-disk, so a restarted app never loops on the same bad payload.
+The receipt makes the target precise — the rejection poisons the delivery it
+came from, never whatever was served most recently — and the marker persists
+on disk, so a restarted app never loops on the same bad payload.
 
 ### Testing your consumer
 
