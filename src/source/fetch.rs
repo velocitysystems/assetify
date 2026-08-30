@@ -33,8 +33,8 @@ pub trait Fetcher: Send + Sync {
    /// slot, so an implementation **must** bound its own runtime — a
    /// connect and between-bytes timeout at minimum. A fetch that
    /// never returns wedges every request for that asset, including
-   /// the offline fallback. The built-in [`ReqwestFetcher`] sets
-   /// these deadlines; a custom fetcher is responsible for its own.
+   /// the offline fallback. The built-in `ReqwestFetcher` sets these
+   /// deadlines; a custom fetcher is responsible for its own.
    async fn fetch(&self, url: &str, sink: &mut (dyn Write + Send)) -> Result<(), FetchError>;
 
    /// Whether this fetcher writes the file itself via

@@ -45,10 +45,11 @@ pub enum Locator {
 }
 
 /// What the acquired bytes *are*: the file itself, or an archive
-/// whose entries become the revision's files.
-#[non_exhaustive]
+/// whose entries become the revision's files. Set through
+/// [`FileSource::extracted`]; the engine reads it, consumers never
+/// name it.
 #[derive(Clone, Debug)]
-pub enum Payload {
+pub(crate) enum Payload {
    /// The bytes are the file, placed under [`FileSource::name`].
    File,
    /// The bytes are an archive. After the digest verifies — over the
@@ -86,8 +87,9 @@ pub struct FileSource {
    /// What the bytes must hash to, verified before placement.
    pub digest: Digest,
    /// What the bytes are — a plain file (the default) or an archive
-   /// to extract.
-   pub payload: Payload,
+   /// to extract. Engine mechanism; set via
+   /// [`extracted`](FileSource::extracted), not read by consumers.
+   pub(crate) payload: Payload,
 }
 
 impl FileSource {

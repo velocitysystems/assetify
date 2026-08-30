@@ -135,6 +135,4 @@ pub use source::policy::{Admission, FetchPolicy};
 #[cfg(feature = "reqwest")]
 pub use source::reqwest::ReqwestFetcher;
 pub use source::static_resolver::StaticResolver;
-pub use source::{
-   ArchiveFormat, AssetSource, FileSource, Locator, Payload, ResolveError, Resolver,
-};
+pub use source::{ArchiveFormat, AssetSource, FileSource, Locator, ResolveError, Resolver};
