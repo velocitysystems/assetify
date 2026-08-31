@@ -197,6 +197,22 @@ impl Assetify {
          return self.fallback(id, &reason);
       }
 
+      if let Some(newest) = self.store.newest_revision(id)
+         && source.revision < newest
+      {
+         // Lexicographic order is the freshness axis, so acquiring a
+         // revision that sorts below one already on disk is either a
+         // deliberate rollback or a revision-naming bug (an unpadded
+         // counter: "10" sorts below "9"). Selection is unchanged —
+         // this only makes the naming bug diagnosable.
+         tracing::warn!(
+            asset = %id,
+            resolved = %source.revision,
+            newest_on_disk = %newest,
+            "acquiring a revision that sorts below the newest on disk"
+         );
+      }
+
       match self.acquire(id, &source).await {
          Ok(()) => Ok(source.revision),
          Err(reason) => self.fallback(id, &format!("acquisition failed: {reason}")),
