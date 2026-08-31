@@ -97,6 +97,11 @@ impl ChannelSink {
 
 impl Write for ChannelSink {
    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+      // One copy per chunk, by construction: `Write` lends a borrowed
+      // slice, and the channel needs owned bytes. Avoiding it would
+      // mean a `Bytes`-shaped sink in the public `Fetcher` signature;
+      // the memcpy is noise next to the SHA-256 pass and disk write
+      // the same bytes pay on the blocking side.
       self.tx.send(buf.to_vec()).map_err(|_| {
          std::io::Error::new(std::io::ErrorKind::BrokenPipe, "staging writer stopped")
       })?;
