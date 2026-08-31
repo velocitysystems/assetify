@@ -85,6 +85,14 @@ mod tests {
       std::fs::create_dir(&revision).unwrap();
       std::fs::set_permissions(&revision, std::fs::Permissions::from_mode(0o555)).unwrap();
 
+      // Probe the premise: root (and some ACL setups) writes into a
+      // 0o555 directory anyway, and the degradation under test never
+      // happens there.
+      if std::fs::write(revision.join(".probe"), b"").is_ok() {
+         eprintln!("skipped: this environment writes into read-only directories (root?)");
+         return;
+      }
+
       let ledger = PoisonLedger::new();
       ledger.poison(&revision, "unloadable");
       assert!(ledger.is_poisoned(&revision), "in-memory fallback holds");
