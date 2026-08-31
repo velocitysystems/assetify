@@ -94,14 +94,18 @@ impl FileBacking for PathBacking {
    }
 }
 
-/// An opaque handle to one delivery. A consumer hands it to
-/// [`Assetify::reject`](crate::Assetify::reject) so the provider
-/// poisons *exactly* the copy the consumer could not load, never a
-/// guess — the identity travels with the delivery and round-trips
-/// through the rejection. No storage detail is exposed: the consumer
-/// obtains one only from [`PreparedAsset::receipt`] and never
-/// inspects it — there is no public constructor, so a rejection can
-/// only ever name a delivery that actually happened.
+/// An opaque handle to one delivery. A rejection names the delivery
+/// it came from by this receipt, so the provider poisons *exactly*
+/// the copy the consumer could not load, never a guess — the identity
+/// travels with the delivery and round-trips through the rejection.
+/// No storage detail is exposed: the consumer obtains one only from
+/// [`PreparedAsset::receipt`] and never inspects it — there is no
+/// public constructor, so a rejection can only ever name a delivery
+/// that actually happened.
+///
+/// Rejection itself is provider-side API rather than part of this
+/// contract; the built-in engine's is
+/// [`Assetify::reject`](crate::Assetify::reject).
 #[derive(Clone, Debug)]
 pub struct DeliveryReceipt {
    /// The revision served, when the provider versions its cache.
@@ -156,9 +160,9 @@ impl PreparedAsset {
       self
    }
 
-   /// This delivery's opaque receipt. Hand it to
-   /// [`Assetify::reject`](crate::Assetify::reject) to reject exactly
-   /// this delivery.
+   /// This delivery's opaque receipt. Hand it back when rejecting
+   /// exactly this delivery — see [`DeliveryReceipt`] for where
+   /// rejection lives.
    pub fn receipt(&self) -> DeliveryReceipt {
       self.receipt.clone()
    }
@@ -189,9 +193,8 @@ impl std::fmt::Debug for PreparedAsset {
 pub enum AssetResponse {
    /// The asset is prepared and every named file is readable. The
    /// consumer still validates content against its own format checks;
-   /// a failed load is reported back through
-   /// [`Assetify::reject`](crate::Assetify::reject) so that copy is
-   /// never re-served.
+   /// a failed load is rejected via the delivery's
+   /// [`DeliveryReceipt`] so that copy is never re-served.
    Available {
       /// The delivery.
       asset: PreparedAsset,
