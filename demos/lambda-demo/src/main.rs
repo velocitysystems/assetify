@@ -30,14 +30,7 @@ fn assets_root() -> PathBuf {
 async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
    // Cache-only mode over a read-only root: the bundle is the cache.
    let engine = Assetify::builder(assets_root()).build()?;
-   let request = AssetRequest::new(
-      "tokenizer/en",
-      [
-         "meta.json",
-         "index.dat",
-         "vocab.txt",
-      ],
-   );
+   let request = AssetRequest::new("tokenizer/en", ["meta.json", "index.dat", "vocab.txt"]);
 
    let asset = match engine.asset(request).await {
       AssetResponse::Available { asset } => asset,
@@ -57,7 +50,11 @@ async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
 
    // Path: read the vocabulary by real path, the way a tokenizer
    // library opening its own files would.
-   let vocab_path = asset.file("vocab.txt").unwrap().path().expect("a filesystem path");
+   let vocab_path = asset
+      .file("vocab.txt")
+      .unwrap()
+      .path()
+      .expect("a filesystem path");
    let vocab = std::fs::read_to_string(vocab_path)?;
    let vocab_words = vocab.lines().count() as u32;
 

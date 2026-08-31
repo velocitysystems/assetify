@@ -65,14 +65,7 @@ fn seed(cache_root: &Path) -> std::io::Result<()> {
 /// and only the summary crosses back.
 #[tauri::command]
 async fn load_assets(engine: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-   let request = AssetRequest::new(
-      "tokenizer/en",
-      [
-         "meta.json",
-         "index.dat",
-         "vocab.txt",
-      ],
-   );
+   let request = AssetRequest::new("tokenizer/en", ["meta.json", "index.dat", "vocab.txt"]);
 
    let asset = match engine.0.asset(request).await {
       AssetResponse::Available { asset } => asset,
@@ -94,7 +87,11 @@ async fn load_assets(engine: tauri::State<'_, Engine>) -> Result<serde_json::Val
 
    // Path: read the vocabulary by real path, the way a tokenizer
    // library opening its own files would.
-   let vocab_path = asset.file("vocab.txt").unwrap().path().expect("a filesystem path");
+   let vocab_path = asset
+      .file("vocab.txt")
+      .unwrap()
+      .path()
+      .expect("a filesystem path");
    let vocab = std::fs::read_to_string(vocab_path).map_err(|e| e.to_string())?;
    let vocab_words = vocab.lines().count() as u32;
 

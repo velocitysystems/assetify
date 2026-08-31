@@ -26,14 +26,7 @@ pub struct AssetSummary {
 #[napi]
 pub async fn load_asset(assets_root: String) -> napi::Result<AssetSummary> {
    let engine = Assetify::builder(&assets_root).build().map_err(reason)?;
-   let request = AssetRequest::new(
-      "tokenizer/en",
-      [
-         "meta.json",
-         "index.dat",
-         "vocab.txt",
-      ],
-   );
+   let request = AssetRequest::new("tokenizer/en", ["meta.json", "index.dat", "vocab.txt"]);
 
    let asset = match engine.asset(request).await {
       AssetResponse::Available { asset } => asset,
@@ -55,7 +48,11 @@ pub async fn load_asset(assets_root: String) -> napi::Result<AssetSummary> {
 
    // Path: read the vocabulary by real path, the way a tokenizer
    // library opening its own files would.
-   let vocab_path = asset.file("vocab.txt").unwrap().path().expect("a filesystem path");
+   let vocab_path = asset
+      .file("vocab.txt")
+      .unwrap()
+      .path()
+      .expect("a filesystem path");
    let vocab = std::fs::read_to_string(vocab_path).map_err(reason)?;
    let vocab_words = vocab.lines().count() as u32;
 
