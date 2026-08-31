@@ -183,8 +183,9 @@ impl ResolveError {
 /// serves what the cache holds, or reports the asset unavailable.
 /// `Err` means resolution failed *this time* (offline, say) — same
 /// fallback, different reason. Implementations should be fast or
-/// cache their own lookups: a resolver is consulted on every request
-/// for an asset that is not already being acquired.
+/// cache their own lookups: a resolver is consulted once per request,
+/// even by requests that coalesced behind an acquisition already in
+/// flight (they re-resolve after it completes).
 #[async_trait::async_trait]
 pub trait Resolver: Send + Sync {
    /// Where asset `id` can currently be acquired.

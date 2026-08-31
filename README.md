@@ -190,8 +190,9 @@ The three return values:
 - `Err(…)` — resolution failed *right now* (offline, backend down): assetify
   falls back to the newest revision on disk.
 
-Resolvers run on every request not already in flight — if resolution is
-expensive, cache your own lookups inside it.
+Resolvers run once per request — concurrent requests for one asset share a
+single download, but each still resolves (serially) to learn which revision
+is current. If resolution is expensive, cache your own lookups inside it.
 
 ### Configuring the fetcher
 
