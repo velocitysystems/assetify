@@ -1,0 +1,7 @@
+{
+   "comment": "The pack manifest, in miniature. Manifest words live archive-side, never in the analyzer: the generation catalog, byte digests, archive placement. The analyzer holds needs; the channel holds the manifest.",
+   "asset": "wordbreak/ko/dict/v4",
+   "generation": "20260821",
+   "archive": "ko-dic.zip",
+   "sha256": "f1657b26680ee9059a9c940847817535ba86295c40265e8f5208f6e3a9131ee5"
+}

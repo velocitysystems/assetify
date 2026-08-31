@@ -18,6 +18,10 @@ all-features = true
 name = "http_assets"
 required-features = ["reqwest"]
 
+[[example]]
+name = "lindera"
+required-features = ["zip"]
+
 [features]
 default = ["mmap"]
 reqwest = ["dep:reqwest"]
@@ -31,6 +35,8 @@ futures-util = { version = "0.3.34", default-features = false, features = [
    "alloc",
 ] }
 hex = "0.4.3"
+lindera = { version = "4.0.1", default-features = false }
+lindera-dictionary = "4.0.1"
 memmap2 = { version = "0.9.11", optional = true }
 reqwest = { version = "0.12.9", default-features = false, features = [
    "rustls-tls",
@@ -45,10 +51,17 @@ zip = { version = "8.6.0", default-features = false, features = [
 ], optional = true }
 
 [dev-dependencies]
+anyhow = "1.0.100"
 assetify = { path = ".", default-features = false, features = ["test-util"] }
+async-trait = "0.1.92"
 hex = "0.4.3"
+lindera = { version = "4.0.1", default-features = false }
+lindera-dictionary = "4.0.1"
 rand = "0.9.1"
+rkyv = "0.8.17"
+serde_json = "1.0.151"
 sha2 = "0.10.9"
+tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.19"
 wiremock = "0.6.2"
