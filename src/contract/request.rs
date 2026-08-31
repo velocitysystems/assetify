@@ -13,6 +13,12 @@ use crate::contract::delivery::DeliveryReceipt;
 /// the target precise: even with several concurrent deliveries of one
 /// asset, the rejection names the one it came from, never "whatever
 /// was served most recently".
+///
+/// A consumer holding the engine directly should prefer
+/// [`Assetify::reject`](crate::Assetify::reject), which poisons
+/// immediately instead of waiting for a next request that might never
+/// come. The echo remains for consumers that only see the
+/// [`Provider`](crate::Provider) contract.
 #[derive(Clone, Debug)]
 pub struct RejectedDelivery {
    /// The receipt from the [`PreparedAsset`](crate::PreparedAsset)

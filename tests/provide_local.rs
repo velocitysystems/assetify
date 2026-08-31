@@ -261,6 +261,54 @@ async fn a_rejection_poisons_its_own_revision_not_the_newest() {
    );
 }
 
+#[tokio::test]
+async fn a_direct_rejection_poisons_immediately_and_falls_back() {
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+
+   // Seed an older revision, then serve the newer one.
+   let old = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260812"),
+      )]))
+      .build()
+      .unwrap();
+   unwrap_available(old.asset(tokenizer_request()).await);
+
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260821"),
+      )]))
+      .build()
+      .unwrap();
+   let delivered = unwrap_available(engine.asset(tokenizer_request()).await);
+
+   // The load failed; rejecting directly poisons without waiting for
+   // a next request.
+   engine.reject(
+      "tokenizer/en",
+      delivered.receipt(),
+      "payload failed content validation",
+   );
+   assert!(
+      cache
+         .path()
+         .join("tokenizer/en/20260821/.poisoned")
+         .exists(),
+      "a direct rejection poisons before any further request"
+   );
+
+   // Re-requesting falls back to the older, unpoisoned revision.
+   let again = unwrap_available(engine.asset(tokenizer_request()).await);
+   let path = again.file("rules.txt").unwrap().path().unwrap().to_owned();
+   assert!(
+      path.to_string_lossy().contains("20260812"),
+      "expected the older revision, got {path:?}"
+   );
+}
+
 /// Counts resolutions, then delegates to a static map.
 struct CountingResolver {
    calls: Arc<AtomicUsize>,

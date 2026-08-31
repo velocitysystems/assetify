@@ -68,6 +68,25 @@ impl Assetify {
       }
    }
 
+   /// Reject a delivery the consumer could not load, poisoning the
+   /// revision it was served from immediately — the preferred route.
+   /// Echoing a [`RejectedDelivery`] on the next request still works,
+   /// but poisons only *if* that next request happens; a direct
+   /// rejection takes effect the moment the load fails.
+   ///
+   /// `receipt` comes from the rejected delivery
+   /// ([`PreparedAsset::receipt`]); a receipt naming no revision (a
+   /// provider without a versioned cache) poisons nothing. An invalid
+   /// `id` is logged and ignored — rejection, like poisoning itself,
+   /// is best-effort and never fails the caller.
+   pub fn reject(&self, id: &str, receipt: DeliveryReceipt, reason: impl Into<String>) {
+      if let Err(invalid) = layout::validate_id(id) {
+         tracing::warn!(asset = %id, reason = %invalid, "rejection ignored: invalid id");
+         return;
+      }
+      self.poison_rejected(id, &RejectedDelivery::new(receipt, reason));
+   }
+
    async fn prepare_one(&self, request: &AssetRequest) -> AssetResponse {
       match self.try_prepare(request).await {
          Ok(asset) => AssetResponse::Available { asset },

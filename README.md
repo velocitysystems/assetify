@@ -302,16 +302,24 @@ Seed the tree in assetify's layout: `<root>/<id>/<revision>/<files>`.
 
 `Unavailable { reason }` is a degraded capability, not an error to branch on:
 keep running and request again later. If a delivery verified but failed *your*
-load (corrupt content, wrong schema), echo its receipt back so that exact copy
-is never re-served:
+load (corrupt content, wrong schema), reject it so that exact copy is never
+re-served:
+
+```rust
+// `asset` is the PreparedAsset you could not load.
+engine.reject("tokenizer/en", asset.receipt(), "schema check failed");
+// The revision is poisoned now; the next request recovers via another one.
+```
+
+Consumers that only see the `Provider` contract echo the receipt back on
+their next request instead — same poisoning, deferred until that request
+happens:
 
 ```rust
 use assetify::RejectedDelivery;
 
-// `asset` is the PreparedAsset you could not load.
 let mut retry = request.clone();
 retry.rejected = Some(RejectedDelivery::new(asset.receipt(), "schema check failed"));
-// The next provide poisons that revision and recovers via a newer one.
 ```
 
 The receipt makes the target precise — the rejection poisons the delivery it
