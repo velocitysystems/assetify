@@ -178,16 +178,23 @@ impl Assetify {
          );
          return Ok(source.revision);
       }
-      if self.store.revision_dir(id, &source.revision).exists() {
-         // Present but poisoned: the same revision would carry the
-         // same bytes, so re-fetching it cannot help.
-         return self.fallback(
-            id,
-            &format!(
+      let revision_dir = self.store.revision_dir(id, &source.revision);
+      if revision_dir.exists() {
+         // Present yet unserviceable, two ways: poisoned (re-fetching
+         // the same bytes cannot help), or a foreign non-directory
+         // entry squatting on the revision's path.
+         let reason = if revision_dir.is_dir() {
+            format!(
                "revision {:?} was rejected by a previous load",
                source.revision
-            ),
-         );
+            )
+         } else {
+            format!(
+               "a foreign entry occupies the path of revision {:?}",
+               source.revision
+            )
+         };
+         return self.fallback(id, &reason);
       }
 
       match self.acquire(id, &source).await {

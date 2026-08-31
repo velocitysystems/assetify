@@ -164,6 +164,32 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
 }
 
 #[tokio::test]
+async fn a_foreign_entry_at_a_revision_path_is_reported_as_such() {
+   let remote = tempfile::tempdir().unwrap();
+   let cache = tempfile::tempdir().unwrap();
+
+   // A plain file squats where the resolved revision's directory
+   // belongs — junk in the cache, not a rejected load.
+   std::fs::create_dir_all(cache.path().join("tokenizer/en")).unwrap();
+   std::fs::write(cache.path().join("tokenizer/en/20260821"), b"junk").unwrap();
+
+   let engine = Assetify::builder(cache.path())
+      .resolver(StaticResolver::new([(
+         "tokenizer/en",
+         tokenizer_source(remote.path(), "20260821"),
+      )]))
+      .build()
+      .unwrap();
+
+   let reason = unwrap_unavailable(engine.asset(tokenizer_request()).await);
+   assert!(reason.contains("foreign entry"), "{reason}");
+   assert!(
+      !reason.contains("rejected by a previous load"),
+      "junk must not read as a rejection: {reason}"
+   );
+}
+
+#[tokio::test]
 async fn a_rejection_poisons_the_served_revision_until_a_newer_one_exists() {
    let remote = tempfile::tempdir().unwrap();
    let cache = tempfile::tempdir().unwrap();
