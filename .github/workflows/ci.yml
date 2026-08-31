@@ -14,8 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.94.0
           components: rustfmt, clippy
       - run: cargo lint-clippy
       - run: cargo lint-fmt
@@ -31,7 +32,9 @@ jobs:
           - { os: windows-latest, label: windows }
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
       - run: cargo test --no-default-features
       - run: cargo test --all-features
 
