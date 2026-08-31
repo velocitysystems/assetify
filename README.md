@@ -27,13 +27,8 @@ Add the dependency to your `Cargo.toml`:
 assetify = { git = "https://github.com/velocitysystems/assetify" }
 ```
 
-Downloading over HTTP(S) is feature-gated; enable it if your assets are
-remote:
-
-```toml
-[dependencies]
-assetify = { git = "https://github.com/velocitysystems/assetify", features = ["reqwest"] }
-```
+Downloading over HTTP(S) is feature-gated: add `features = ["reqwest"]` when
+your assets are remote.
 
 ## Quick start
 
@@ -136,11 +131,8 @@ same. Your only choice is **when that answer is decided**:
 | You write… | a `StaticResolver` map | a type implementing `Resolver` |
 | Typical case | URLs + checksums pinned per release | a backend that publishes new revisions; per-user entitlements |
 
-Can "where does this asset live?" change while the app runs? No →
-`StaticResolver` (as in the quick start). Yes → implement `Resolver`, one
-async method; swapping later touches only the `.resolver(…)` line.
-
-A dynamic resolver asking a backend which release is current:
+Swapping one for the other later touches only the `.resolver(…)` line. A
+dynamic resolver asking a backend which release is current:
 
 ```rust
 use assetify::{AssetSource, FileSource, ResolveError, Resolver};
@@ -392,8 +384,6 @@ platform-specific setup:
 - **Asset packs with many files** — ship them as one zip per asset
   (`FileSource::url(..).extracted(ArchiveFormat::Zip)`, `zip` feature): one
   download, one digest, the whole extracted tree served by file name.
-- **Mobile and serverless** — see [`demos/`](demos/): verified on the iOS
-  simulator and via a local Lambda invoke.
 - **Private sources** — presigned URLs work with the built-in fetcher;
   for authenticated requests (custom headers, request signing), supply
   your own `Fetcher`.

@@ -161,8 +161,7 @@ impl PreparedAsset {
    }
 
    /// This delivery's opaque receipt. Hand it back when rejecting
-   /// exactly this delivery — see [`DeliveryReceipt`] for where
-   /// rejection lives.
+   /// exactly this delivery — see [`DeliveryReceipt`].
    pub fn receipt(&self) -> DeliveryReceipt {
       self.receipt.clone()
    }

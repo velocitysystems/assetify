@@ -155,8 +155,7 @@ impl Assetify {
          && let Admission::Deny { reason } = policy.admit(id).await
       {
          // Before resolution on purpose: a denied request does no
-         // resolver or network work, serves silently from cache, and
-         // surfaces only when nothing is on disk.
+         // resolver or network work.
          return self.fallback(id, &format!("acquisition declined: {reason}"));
       }
 
@@ -294,10 +293,8 @@ impl Assetify {
          ));
       };
 
-      // A fetcher that owns the transfer (a native downloader) writes
-      // the file itself; the engine then verifies it by re-reading —
-      // one extra pass, off the runtime, and verification still never
-      // leaves the engine's side of the seam.
+      // The fetcher owns the transfer; verify the landed file by
+      // re-reading it — one extra pass, on the blocking pool.
       if fetcher.writes_to_path() {
          fetcher
             .fetch_to_path(url, destination)

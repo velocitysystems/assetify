@@ -35,8 +35,6 @@ impl PoisonLedger {
       if std::fs::write(revision_dir.join(MARKER), reason).is_err() {
          // Read-only root (or the directory vanished): remember for
          // this process's lifetime instead.
-         // Recover from a poisoned lock: the set stays valid
-         // regardless of a panicking peer.
          self
             .memory
             .lock()
