@@ -236,6 +236,7 @@ impl Assetify {
       self
          .store
          .place_revision(staged, id, &source.revision)
+         .await
          .map(|_| ()) // AlreadyPresent: a racing writer won; same result.
          .map_err(|e| format!("cannot place revision {:?}: {e}", source.revision))?;
       tracing::info!(

@@ -70,13 +70,19 @@ impl Store {
    }
 
    /// Atomically place a staged revision; idempotent under races.
-   pub(crate) fn place_revision(
+   /// Placement fsyncs every staged file before the rename — seconds
+   /// of blocking IO for a large asset — so it runs on the blocking
+   /// pool, never on the async runtime.
+   pub(crate) async fn place_revision(
       &self,
       staged: TempDir,
       id: &str,
       revision: &str,
    ) -> io::Result<Placement> {
-      place::place(staged, &self.revision_dir(id, revision))
+      let destination = self.revision_dir(id, revision);
+      tokio::task::spawn_blocking(move || place::place(staged, &destination))
+         .await
+         .map_err(io::Error::other)?
    }
 
    /// Poison a revision the consumer could not load.
@@ -94,8 +100,8 @@ impl Store {
 mod tests {
    use super::*;
 
-   #[test]
-   fn a_revision_round_trips_through_stage_place_resolve() {
+   #[tokio::test]
+   async fn a_revision_round_trips_through_stage_place_resolve() {
       let root = tempfile::tempdir().unwrap();
       let store = Store::new(root.path().to_path_buf());
 
@@ -104,6 +110,7 @@ mod tests {
       assert_eq!(
          store
             .place_revision(staged, "tokenizer/en", "20260821")
+            .await
             .unwrap(),
          Placement::Placed
       );
@@ -122,8 +129,8 @@ mod tests {
       assert!(store.find_file(&dir, "meta.json").is_ok());
    }
 
-   #[test]
-   fn poisoned_revisions_stop_being_served() {
+   #[tokio::test]
+   async fn poisoned_revisions_stop_being_served() {
       let root = tempfile::tempdir().unwrap();
       let store = Store::new(root.path().to_path_buf());
 
@@ -132,6 +139,7 @@ mod tests {
          std::fs::write(staged.path().join("model.bin"), revision).unwrap();
          store
             .place_revision(staged, "models/sentiment", revision)
+            .await
             .unwrap();
       }
 
