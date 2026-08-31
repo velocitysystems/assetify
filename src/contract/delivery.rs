@@ -94,8 +94,8 @@ impl FileBacking for PathBacking {
    }
 }
 
-/// An opaque handle to one delivery. A consumer echoes it back inside
-/// a [`RejectedDelivery`](crate::RejectedDelivery) so the provider
+/// An opaque handle to one delivery. A consumer hands it to
+/// [`Assetify::reject`](crate::Assetify::reject) so the provider
 /// poisons *exactly* the copy the consumer could not load, never a
 /// guess — the identity travels with the delivery and round-trips
 /// through the rejection. No storage detail is exposed: the consumer
@@ -106,7 +106,7 @@ impl FileBacking for PathBacking {
 pub struct DeliveryReceipt {
    /// The revision served, when the provider versions its cache.
    /// Absent for providers that don't (an in-memory test double), in
-   /// which case a rejection echo has nothing to poison.
+   /// which case a rejection has nothing to poison.
    pub(crate) revision: Option<String>,
 }
 
@@ -156,8 +156,8 @@ impl PreparedAsset {
       self
    }
 
-   /// This delivery's opaque receipt. Echo it in a
-   /// [`RejectedDelivery`](crate::RejectedDelivery) to reject exactly
+   /// This delivery's opaque receipt. Hand it to
+   /// [`Assetify::reject`](crate::Assetify::reject) to reject exactly
    /// this delivery.
    pub fn receipt(&self) -> DeliveryReceipt {
       self.receipt.clone()
@@ -188,10 +188,10 @@ impl std::fmt::Debug for PreparedAsset {
 #[derive(Debug)]
 pub enum AssetResponse {
    /// The asset is prepared and every named file is readable. The
-   /// consumer still validates content against
-   /// its own format checks; a failed load is echoed back as a
-   /// [`RejectedDelivery`](crate::RejectedDelivery) on the next
-   /// request.
+   /// consumer still validates content against its own format checks;
+   /// a failed load is reported back through
+   /// [`Assetify::reject`](crate::Assetify::reject) so that copy is
+   /// never re-served.
    Available {
       /// The delivery.
       asset: PreparedAsset,

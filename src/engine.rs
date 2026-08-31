@@ -5,16 +5,18 @@
 //! 1. **Validate** the id and file names — they become filesystem
 //!    paths, so traversal and reserved shapes are rejected before any
 //!    path is built.
-//! 2. **Poison** the previously served revision when the request
-//!    carries a rejection echo.
-//! 3. **Ensure a revision**: ask the resolver where bytes live; serve
+//! 2. **Ensure a revision**: ask the resolver where bytes live; serve
 //!    the named revision from cache when present; otherwise fetch
 //!    every file into staging (hashing as it streams), verify every
 //!    digest, and atomically place the whole set. On any resolution
 //!    or acquisition failure, fall back to the newest serviceable
 //!    revision already on disk.
-//! 4. **Serve**: locate each requested file by unique name and open
+//! 3. **Serve**: locate each requested file by unique name and open
 //!    each requested file for reading.
+//!
+//! A delivery the consumer could not load is reported back through
+//! [`Assetify::reject`], which poisons that revision so it is never
+//! re-served.
 //!
 //! A missing asset is a degraded capability, never an error: every
 //! failure lands as [`AssetResponse::Unavailable`] with a reason, and
@@ -27,7 +29,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::contract::delivery::{AssetResponse, DeliveryReceipt, PreparedAsset, PreparedFile};
 use crate::contract::provider::Provider;
-use crate::contract::request::{AssetRequest, RejectedDelivery};
+use crate::contract::request::AssetRequest;
 use crate::error::AssetifyError;
 use crate::source::fetch::{ChannelSink, Fetcher, HashingSink};
 use crate::source::policy::{Admission, FetchPolicy};
@@ -68,14 +70,17 @@ impl Assetify {
       }
    }
 
-   /// Reject a delivery the consumer could not load, poisoning the
-   /// revision it was served from immediately — the preferred route.
-   /// Echoing a [`RejectedDelivery`] on the next request still works,
-   /// but poisons only *if* that next request happens; a direct
-   /// rejection takes effect the moment the load fails.
+   /// Reject a delivery the consumer could not load (a named gap, an
+   /// unreadable payload format, failed content validation), poisoning
+   /// the revision it was served from immediately: re-acquire, don't
+   /// re-serve. Call it the moment the load fails — the next request
+   /// for the asset recovers via another revision.
    ///
    /// `receipt` comes from the rejected delivery
-   /// ([`PreparedAsset::receipt`]); a receipt naming no revision (a
+   /// ([`PreparedAsset::receipt`]), which is what makes the target
+   /// precise: even with several concurrent deliveries of one asset,
+   /// the rejection poisons the revision it came from, never "whatever
+   /// was served most recently". A receipt naming no revision (a
    /// provider without a versioned cache) poisons nothing. An invalid
    /// `id` is logged and ignored — rejection, like poisoning itself,
    /// is best-effort and never fails the caller.
@@ -84,7 +89,17 @@ impl Assetify {
          tracing::warn!(asset = %id, reason = %invalid, "rejection ignored: invalid id");
          return;
       }
-      self.poison_rejected(id, &RejectedDelivery::new(receipt, reason));
+      let Some(revision) = &receipt.revision else {
+         return;
+      };
+      let reason = reason.into();
+      tracing::warn!(
+         asset = %id,
+         revision = %revision,
+         reason = %reason,
+         "poisoned rejected revision"
+      );
+      self.store.poison_revision(id, revision, &reason);
    }
 
    async fn prepare_one(&self, request: &AssetRequest) -> AssetResponse {
@@ -101,9 +116,6 @@ impl Assetify {
       }
 
       let slot = request.id.clone();
-      if let Some(rejected) = &request.rejected {
-         self.poison_rejected(&request.id, rejected);
-      }
 
       // Coalesce concurrent acquisition of the same slot; serving
       // afterwards is cheap and runs per request.
@@ -384,23 +396,6 @@ impl Assetify {
       {
          flights.remove(slot);
       }
-   }
-
-   /// Poison exactly the revision the rejected delivery came from.
-   /// The receipt carries that revision, so there is no guessing: a
-   /// rejection for a delivery that named no revision (a provider
-   /// without a versioned cache) poisons nothing.
-   fn poison_rejected(&self, id: &str, rejected: &RejectedDelivery) {
-      let Some(revision) = &rejected.receipt.revision else {
-         return;
-      };
-      tracing::warn!(
-         asset = %id,
-         revision = %revision,
-         reason = %rejected.reason,
-         "poisoned rejected revision"
-      );
-      self.store.poison_revision(id, revision, &rejected.reason);
    }
 }
 

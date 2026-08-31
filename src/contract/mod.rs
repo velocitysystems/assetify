@@ -14,4 +14,4 @@ pub mod request;
 pub use access::{FileBacking, RandomAccess, StreamAccess};
 pub use delivery::{AssetResponse, DeliveryReceipt, PreparedAsset, PreparedFile};
 pub use provider::Provider;
-pub use request::{AssetRequest, RejectedDelivery};
+pub use request::AssetRequest;

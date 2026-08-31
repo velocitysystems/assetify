@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use assetify::{
    AssetRequest, AssetResponse, AssetSource, Assetify, Digest, FileSource, Locator, Provider,
-   RejectedDelivery, ResolveError, Resolver, StaticResolver,
+   ResolveError, Resolver, StaticResolver,
 };
 use sha2::Digest as _;
 
@@ -164,7 +164,7 @@ async fn resolution_failure_falls_back_to_the_newest_on_disk_revision() {
 }
 
 #[tokio::test]
-async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists() {
+async fn a_rejection_poisons_the_served_revision_until_a_newer_one_exists() {
    let remote = tempfile::tempdir().unwrap();
    let cache = tempfile::tempdir().unwrap();
 
@@ -177,15 +177,15 @@ async fn a_rejection_echo_poisons_the_served_revision_until_a_newer_one_exists()
       .unwrap();
    let delivered = unwrap_available(engine.asset(tokenizer_request()).await);
 
-   // The consumer could not load the delivery; echoing its receipt
+   // The consumer could not load the delivery; rejecting its receipt
    // poisons that revision, and the resolver still names it — so
    // nothing serves.
-   let mut echoed = tokenizer_request();
-   echoed.rejected = Some(RejectedDelivery::new(
+   engine.reject(
+      "tokenizer/en",
       delivered.receipt(),
       "payload failed content validation",
-   ));
-   let reason = unwrap_unavailable(engine.asset(echoed).await);
+   );
+   let reason = unwrap_unavailable(engine.asset(tokenizer_request()).await);
    assert!(reason.contains("rejected by a previous load"), "{reason}");
 
    // Poison survives a process restart (a fresh engine, same root).
@@ -235,15 +235,15 @@ async fn a_rejection_poisons_its_own_revision_not_the_newest() {
       .unwrap();
    unwrap_available(new.asset(tokenizer_request()).await);
 
-   // A now rejects the delivery it actually held (the older one). The
-   // old, guessing code would have poisoned whatever was served most
+   // A now rejects the delivery it actually held (the older one). A
+   // guessing design would have poisoned whatever was served most
    // recently — the good new revision. The receipt pins the target.
-   let mut echoed = tokenizer_request();
-   echoed.rejected = Some(RejectedDelivery::new(
+   new.reject(
+      "tokenizer/en",
       delivered_a.receipt(),
       "payload failed content validation",
-   ));
-   unwrap_available(new.asset(echoed).await);
+   );
+   unwrap_available(new.asset(tokenizer_request()).await);
 
    // The newer revision is untouched and still serves; only the older
    // one carries a poison marker.

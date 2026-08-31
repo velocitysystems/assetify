@@ -24,8 +24,8 @@
 //!
 //! A missing asset is never an error: [`AssetResponse::Unavailable`]
 //! degrades one capability and a later request retries. A delivery the
-//! consumer *could not load* is echoed back as a [`RejectedDelivery`]
-//! so the cached copy is re-acquired rather than re-served.
+//! consumer *could not load* is rejected ([`Assetify::reject`]) so the
+//! cached copy is re-acquired rather than re-served.
 //!
 //! # Quick start
 //!
@@ -93,7 +93,7 @@ pub mod testing;
 
 pub use contract::{
    AssetRequest, AssetResponse, DeliveryReceipt, FileBacking, PreparedAsset, PreparedFile,
-   Provider, RandomAccess, RejectedDelivery, StreamAccess,
+   Provider, RandomAccess, StreamAccess,
 };
 pub use digest::{Digest, InvalidDigest};
 pub use engine::{Assetify, AssetifyBuilder};

@@ -1,45 +1,5 @@
 //! The request side: what a consumer declares it needs.
 
-use crate::contract::delivery::DeliveryReceipt;
-
-/// A delivery the consumer could not load: the payload verified and
-/// arrived intact, yet failed the consumer's own checks (a named gap,
-/// an access-kind mismatch, an unreadable payload format, failed
-/// content validation).
-///
-/// Echoed back on the next request for the same asset so the provider
-/// poisons *exactly the delivery being rejected* — re-acquire, don't
-/// re-serve. Carrying the delivery's [`DeliveryReceipt`] is what makes
-/// the target precise: even with several concurrent deliveries of one
-/// asset, the rejection names the one it came from, never "whatever
-/// was served most recently".
-///
-/// A consumer holding the engine directly should prefer
-/// [`Assetify::reject`](crate::Assetify::reject), which poisons
-/// immediately instead of waiting for a next request that might never
-/// come. The echo remains for consumers that only see the
-/// [`Provider`](crate::Provider) contract.
-#[derive(Clone, Debug)]
-pub struct RejectedDelivery {
-   /// The receipt from the [`PreparedAsset`](crate::PreparedAsset)
-   /// being rejected, via [`PreparedAsset::receipt`](crate::PreparedAsset::receipt).
-   pub receipt: DeliveryReceipt,
-   /// The consumer's load-failure detail. Diagnostic text; providers
-   /// do not branch on it.
-   pub reason: String,
-}
-
-impl RejectedDelivery {
-   /// Reject the delivery this receipt came from, with a
-   /// human-readable reason.
-   pub fn new(receipt: DeliveryReceipt, reason: impl Into<String>) -> Self {
-      RejectedDelivery {
-         receipt,
-         reason: reason.into(),
-      }
-   }
-}
-
 /// One asset the consumer wants — named logically, never by path.
 #[derive(Clone, Debug)]
 pub struct AssetRequest {
@@ -60,10 +20,6 @@ pub struct AssetRequest {
    /// matched by name, never by position or path; names must be
    /// unique within the asset.
    pub files: Vec<String>,
-   /// Present when the consumer rejected this asset's previous
-   /// delivery at load. A provider holding a cached copy must treat
-   /// it as poisoned.
-   pub rejected: Option<RejectedDelivery>,
 }
 
 impl AssetRequest {
@@ -81,13 +37,11 @@ impl AssetRequest {
       format!("{base}/v{major}")
    }
 
-   /// A request for one asset, naming the files it must contain, with
-   /// no rejection echo.
+   /// A request for one asset, naming the files it must contain.
    pub fn new(id: impl Into<String>, files: impl IntoIterator<Item = impl Into<String>>) -> Self {
       AssetRequest {
          id: id.into(),
          files: files.into_iter().map(Into::into).collect(),
-         rejected: None,
       }
    }
 }

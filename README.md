@@ -312,17 +312,6 @@ engine.reject("tokenizer/en", asset.receipt(), "schema check failed");
 // The revision is poisoned now; the next request recovers via another one.
 ```
 
-Consumers that only see the `Provider` contract echo the receipt back on
-their next request instead — same poisoning, deferred until that request
-happens:
-
-```rust
-use assetify::RejectedDelivery;
-
-let mut retry = request.clone();
-retry.rejected = Some(RejectedDelivery::new(asset.receipt(), "schema check failed"));
-```
-
 The receipt makes the target precise — the rejection poisons the delivery it
 came from, never whatever was served most recently — and the marker persists
 on disk, so a restarted app never loops on the same bad payload.
